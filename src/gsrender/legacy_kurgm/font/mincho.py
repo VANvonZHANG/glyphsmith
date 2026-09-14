@@ -174,6 +174,25 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
         if not (a3_100 == 5 and a3_opt == 0 and x3 - tx2 <= 0):    # for closer position
             cd_draw_line(font, outline, tx2, ty2, x3, y3,
                          6, a3_100, 0, a3_opt, a3_opt)             # bolder by force
+    elif a1_100 == 6:
+        if a3_100 == 4:
+            if x3 == x4:
+                dx1, dy1 = 0, -p.k_mage                            # ?????
+            elif y3 == y4:
+                dx1, dy1 = -p.k_mage, 0                            # ?????
+            else:
+                dx1, dy1 = normalize(x3 - x4, y3 - y4, p.k_mage)
+            tx1 = x4 + dx1
+            ty1 = y4 + dy1
+            cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, tx1, ty1,
+                           a2_100 + a2_opt_1 * 100, 1, a2_opt_2, 0, a2_opt_3, 0)
+            cd_draw_curve(font, outline, tx1, ty1, x4, y4,
+                          x4 - p.k_mage, y4, 1, 14, 0, hane, 0, a3_opt_2)
+        else:
+            cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, x4, y4,
+                           a2_100 + a2_opt_1 * 100,
+                           15 if (a3_100 == 5 and a3_opt == 0) else a3_100,
+                           a2_opt_2, a3_opt_1, a2_opt_3, a3_opt_2)
     elif a1_100 == 12:
         cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3,
                       a2_100 + a2_opt_1 * 100, 1, a2_opt_2, 0, a2_opt_3, 0)
