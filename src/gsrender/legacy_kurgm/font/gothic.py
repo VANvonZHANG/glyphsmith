@@ -17,7 +17,7 @@ import math
 
 from gsrender.outline import Outline
 
-from .base import Font, Shotai
+from .base import Drawer, Font, Shotai
 from .gothic_cd import cd_draw_bezier, cd_draw_curve, cd_draw_line, normalize
 from .transform import df_transform
 
@@ -159,7 +159,8 @@ def df_draw_font(font: Font, outline: Outline, stroke) -> None:
             # 源此处留有按中点拆两段 cdDrawCurve 的注释掉旧实现，照抄现行为
             cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, x4, y4, a2_100, a3_100)
     elif a1_100 == 7:
-        pass    # T8 分段移植：case 7 待实现
+        cd_draw_line(font, outline, x1, y1, x2, y2, a2_100, 1)
+        cd_draw_curve(font, outline, x2, y2, x3, y3, x4, y4, 1, a3_100)
     elif a1_100 == 9:
         pass    # may not be exist（源注释；kageCanvas 旧代码已注释）
     # default: break（无操作）
@@ -174,7 +175,7 @@ class GothicFont(Font):
 
     shotai = Shotai.K_GOTHIC
 
-    def _stroke_drawer(self, stroke) -> object:
+    def _stroke_drawer(self, stroke) -> Drawer:
         def draw(outline: Outline) -> None:
             df_draw_font(self, outline, stroke)
         return draw
