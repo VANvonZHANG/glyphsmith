@@ -13,6 +13,8 @@ stroke 分发（_stroke_drawer → df_draw_font），TransformOp 通道（case 0
 """
 from __future__ import annotations
 
+import math
+
 from gsrender.outline import Outline
 
 from .base import Font, Shotai
@@ -103,7 +105,34 @@ def df_draw_font(font: Font, outline: Outline, stroke) -> None:
         else:
             cd_draw_line(font, outline, tx2, ty2, x3, y3, 1, a3_100)
     elif a1_100 == 4:
-        pass    # T8 分段移植：case 4 待实现
+        rate = math.hypot(x3 - x2, y3 - y2) / 120 * 6
+        if rate > 6:
+            rate = 6
+        if x1 == x2 and y1 == y2:
+            dx1, dy1 = 0, font.params.k_mage * rate                # ?????
+        else:
+            dx1, dy1 = normalize(x1 - x2, y1 - y2, font.params.k_mage * rate)
+        tx1 = x2 + dx1
+        ty1 = y2 + dy1
+        if x2 == x3 and y2 == y3:
+            dx2, dy2 = 0, -font.params.k_mage * rate               # ?????
+        else:
+            dx2, dy2 = normalize(x3 - x2, y3 - y2, font.params.k_mage * rate)
+        tx2 = x2 + dx2
+        ty2 = y2 + dy2
+
+        cd_draw_line(font, outline, x1, y1, tx1, ty1, a2_100, 1)
+        cd_draw_curve(font, outline, tx1, ty1, x2, y2, tx2, ty2, 1, 1)
+        if a3_100 == 5 and a3_opt == 0:
+            tx3 = x3 - font.params.k_mage
+            ty3 = y3
+            tx4 = x3 + font.params.k_mage * 0.5
+            ty4 = y3 - font.params.k_mage * 2
+
+            cd_draw_line(font, outline, tx2, ty2, tx3, ty3, 1, 1)
+            cd_draw_curve(font, outline, tx3, ty3, x3, y3, tx4, ty4, 1, 0)
+        else:
+            cd_draw_line(font, outline, tx2, ty2, x3, y3, 1, a3_100)
     elif a1_100 == 6:
         pass    # T8 分段移植：case 6 待实现
     elif a1_100 == 7:
