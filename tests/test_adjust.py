@@ -97,7 +97,7 @@ def test_adjust_kirikuchi_only_with_horizontal_at_start():
 
 
 # ── get_drawers 分发（index.ts:356-361）───────────────────────
-def test_mincho_get_drawers_placeholder_noop():
+def test_mincho_get_drawers_draws_strokes():
     from gsrender.outline import Outline
 
     font = select_font(Shotai.K_MINCHO)
@@ -105,7 +105,7 @@ def test_mincho_get_drawers_placeholder_noop():
     o = Outline()
     for d in font.get_drawers(_strokes("1:0:0:40:100:180:100$1:0:2:170:80:170:110")):
         d(o)
-    assert o.to_path_d() == ""        # T10 前不画（no-op drawer）
+    assert len(o.contours) > 0        # T10 起 cd 表真画（golden m: 见 T10）
 
 
 def test_mincho_adjust_strokes_passthrough_transformop():

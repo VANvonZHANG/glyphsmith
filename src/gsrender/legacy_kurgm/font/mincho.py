@@ -193,6 +193,14 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
                            a2_100 + a2_opt_1 * 100,
                            15 if (a3_100 == 5 and a3_opt == 0) else a3_100,
                            a2_opt_2, a3_opt_1, a2_opt_3, a3_opt_2)
+    elif a1_100 == 7:
+        cd_draw_line(font, outline, x1, y1, x2, y2,
+                     a2_100 + a2_opt_1 * 100, 1, tate, 0, 0)
+        cd_draw_curve(font, outline, x2, y2, x3, y3, x4, y4,
+                      1, a3_100, int(math.fmod(tate, 10)), a3_opt_1,
+                      math.floor(tate / 10), a3_opt_2)
+    elif a1_100 == 9:
+        pass    # may not be exist（源注释；kageCanvas 旧代码已注释）
     elif a1_100 == 12:
         cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3,
                       a2_100 + a2_opt_1 * 100, 1, a2_opt_2, 0, a2_opt_3, 0)
