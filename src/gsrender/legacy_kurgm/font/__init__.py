@@ -7,12 +7,16 @@ K/font/mincho/index.ts、K/font/gothic/index.ts。
 from . import base as _base
 from .base import Drawer, Font, FontParams, Shotai, _StubFont, select_font
 from .gothic import GothicFont
+from .mincho import MinchoAdjustedStroke, MinchoFont
 from .transform import df_transform
 
-# T8：K_GOTHIC 注册真 GothicFont（笔画真画）。注册表本体留在 base（避免
-# base ↔ gothic 循环导入），在包初始化处完成注入——import 本包任何子模块
-# 都会先跑本文件，注册先于一切 select_font 调用。K_MINCHO 待 T10。
+# T8/T9：注册真 GothicFont（T8）与真 MinchoFont（T9：adjust 七连管真算，
+# df_draw_font 仍占位待 T10 的 mincho cd 表）。注册表本体留在 base（避免
+# base ↔ 子类循环导入），在包初始化处完成注入——import 本包任何子模块
+# 都会先跑本文件，注册先于一切 select_font 调用。
 _base._FONTS[Shotai.K_GOTHIC] = GothicFont
+_base._FONTS[Shotai.K_MINCHO] = MinchoFont
 
 __all__ = ["Drawer", "Font", "FontParams", "Shotai", "GothicFont",
+           "MinchoFont", "MinchoAdjustedStroke",
            "df_transform", "select_font", "_StubFont"]
