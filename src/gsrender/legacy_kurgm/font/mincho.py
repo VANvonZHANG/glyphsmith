@@ -84,7 +84,27 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
     kakato = st.kakato_adjustment
     mage = st.mage_adjustment
 
-    if a1_100 == 2:
+    if a1_100 == 1:
+        if a3_100 == 4:
+            if x1 == x2 and y1 == y2:
+                dx1, dy1 = 0, p.k_mage                            # ?????
+            else:
+                dx1, dy1 = normalize(x1 - x2, y1 - y2, p.k_mage)
+            tx1 = x2 + dx1
+            ty1 = y2 + dy1
+            cd_draw_line(font, outline, x1, y1, tx1, ty1,
+                         a2_100 + a2_opt_1 * 100, 1, tate, 0, 0)
+            cd_draw_curve(font, outline,
+                          tx1, ty1, x2, y2,
+                          x2 - p.k_mage * ((p.k_adjust_tate_step + 4) - tate)
+                          / (p.k_adjust_tate_step + 4), y2,
+                          1, 14, int(math.fmod(tate, 10)), hane,
+                          math.floor(tate / 10), a3_opt_2)
+        else:
+            cd_draw_line(font, outline, x1, y1, x2, y2,
+                         a2_100 + a2_opt_1 * 100, a3_100,
+                         tate, uroko, kakato)
+    elif a1_100 == 2:
         # case 12: // ... no need
         if a3_100 == 4:
             if x2 == x3:
