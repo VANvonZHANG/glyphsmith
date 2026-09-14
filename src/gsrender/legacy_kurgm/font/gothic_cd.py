@@ -70,7 +70,7 @@ class _Pen:
         self.cos_theta = 1.0
         self.sin_theta = 0.0
 
-    def _set_matrix2(self, cos_theta: float, sin_theta: float) -> "_Pen":
+    def set_matrix2(self, cos_theta: float, sin_theta: float) -> "_Pen":
         self.cos_theta = cos_theta
         self.sin_theta = sin_theta
         return self
@@ -79,21 +79,21 @@ class _Pen:
         dx, dy = normalize(other_x - self.x, other_y - self.y)
         # Given: rotate(theta)((-1, 0)) = (dx, dy)
         # Determine: (cos theta, sin theta) = rotate(theta)((1, 0)) = (-dx, -dy)
-        return self._set_matrix2(-dx, -dy)
+        return self.set_matrix2(-dx, -dy)
 
     def set_right(self, other_x: float, other_y: float) -> "_Pen":
         dx, dy = normalize(other_x - self.x, other_y - self.y)
-        return self._set_matrix2(dx, dy)
+        return self.set_matrix2(dx, dy)
 
     def set_up(self, other_x: float, other_y: float) -> "_Pen":
         dx, dy = normalize(other_x - self.x, other_y - self.y)
         # Given: rotate(theta)((0, -1)) = (dx, dy)
         # Determine: (cos theta, sin theta) = rotate(theta)((1, 0)) = (-dy, dx)
-        return self._set_matrix2(-dy, dx)
+        return self.set_matrix2(-dy, dx)
 
     def set_down(self, other_x: float, other_y: float) -> "_Pen":
         dx, dy = normalize(other_x - self.x, other_y - self.y)
-        return self._set_matrix2(dy, -dx)
+        return self.set_matrix2(dy, -dx)
 
     def move(self, local_dx: float, local_dy: float) -> "_Pen":
         self.x, self.y = self.get_point(local_dx, local_dy)[:2]
@@ -103,6 +103,11 @@ class _Pen:
         return (self.x + self.cos_theta * local_x + -self.sin_theta * local_y,
                 self.y + self.sin_theta * local_x + self.cos_theta * local_y,
                 off)
+
+    def get_polygon(self, local_points: list[tuple[float, float, int]]
+                    ) -> list[tuple[float, float, int]]:
+        """K/pen.ts:65-67 getPolygon：局部点表整体换算为全局轮廓。"""
+        return [self.get_point(x, y, off) for x, y, off in local_points]
 
 
 # ── K/curve.ts:53-97 generateFattenCurve ────────────────────────

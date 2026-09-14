@@ -28,7 +28,8 @@ from ..expansion import TransformOp
 from ..geom2d import _round
 from ..rstroke import RStroke
 from .base import Drawer, Font, Shotai
-from .gothic_cd import normalize   # K/util.ts:11-18；T10 提取 mincho cd 共享工具时一并上移
+from .gothic_cd import normalize   # K/util.ts:11-18；共享工具留在 gothic_cd（T10 决策）
+from .mincho_cd import cd_draw_bezier, cd_draw_curve, cd_draw_line
 
 
 class MinchoAdjustedStroke(RStroke):
@@ -60,15 +61,53 @@ class MinchoAdjustedStroke(RStroke):
 
 def df_draw_font(font: "MinchoFont", outline: Outline,
                  adj_stroke: MinchoAdjustedStroke) -> None:
-    """mincho/index.ts:75-222 dfDrawFont——T10 的移植目标体（本任务占位 no-op）。
+    """mincho/index.ts:88-221 dfDrawFont——switch(a1_100) 逐案分发到
+    mincho/cd.ts（mincho_cd.cd_draw_*）。
 
-    分发结构与参数传递按 :356-361 定型：MinchoFont.get_drawers →
-    adjust_strokes → 每笔 drawer(outline) → df_draw_font(font, outline,
-    adj_stroke)。T10 按源 :88-221 的 switch(a1_100) 填真函数体，调用
-    mincho/cd.ts 的 cdDrawBezier/cdDrawCurve/cdDrawLine（= cdDrawCurveU
-    分发表），本占位期间指纹不匹配 golden 属预期。
+    参数传递铁律：cdDrawCurve 的 opt1/opt3 通道 = tateAdjustment 的
+    `% 10` 与 `Math.floor(/10)` 拆分（T9 移交要点 1）；六调整量直接取
+    MinchoAdjustedStroke 字段。JS `%` → math.fmod（截断余数语义）。
     """
-    return None
+    st = adj_stroke
+    p = font.params
+    a1_100 = st.a1_100
+    a2_100, a2_opt_1, a2_opt_2, a2_opt_3 = \
+        st.a2_100, st.a2_opt_1, st.a2_opt_2, st.a2_opt_3
+    a3_100, a3_opt, a3_opt_1, a3_opt_2 = \
+        st.a3_100, st.a3_opt, st.a3_opt_1, st.a3_opt_2
+    x1, y1, x2, y2 = st.x1, st.y1, st.x2, st.y2
+    x3, y3, x4, y4 = st.x3, st.y3, st.x4, st.y4
+    kirikuchi = st.kirikuchi_adjustment
+    tate = st.tate_adjustment
+    hane = st.hane_adjustment
+    uroko = st.uroko_adjustment
+    kakato = st.kakato_adjustment
+    mage = st.mage_adjustment
+
+    if a1_100 == 2:
+        # case 12: // ... no need
+        if a3_100 == 4:
+            if x2 == x3:
+                dx1, dy1 = 0, -p.k_mage                            # ?????
+            elif y2 == y3:
+                dx1, dy1 = -p.k_mage, 0                            # ?????
+            else:
+                dx1, dy1 = normalize(x2 - x3, y2 - y3, p.k_mage)
+            tx1 = x3 + dx1
+            ty1 = y3 + dy1
+            cd_draw_curve(font, outline, x1, y1, x2, y2, tx1, ty1,
+                          a2_100 + kirikuchi * 100, 0, a2_opt_2, 0, a2_opt_3, 0)
+            cd_draw_curve(font, outline, tx1, ty1, x3, y3, x3 - p.k_mage, y3,
+                          2, 14, a2_opt_2, hane, 0, a3_opt_2)
+        else:
+            cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3,
+                          a2_100 + kirikuchi * 100,
+                          15 if (a3_100 == 5 and a3_opt == 0) else a3_100,
+                          a2_opt_2, a3_opt_1, a2_opt_3, a3_opt_2)
+    elif a1_100 == 12:
+        cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3,
+                      a2_100 + a2_opt_1 * 100, 1, a2_opt_2, 0, a2_opt_3, 0)
+        cd_draw_line(font, outline, x3, y3, x4, y4, 6, a3_100, 0, a3_opt, a3_opt)
 
 
 class MinchoFont(Font):
