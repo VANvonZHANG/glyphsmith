@@ -97,8 +97,8 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
                          a2_100 + a2_opt_1 * 100, 1, tate, 0, 0)
             cd_draw_curve(font, outline,
                           tx1, ty1, x2, y2,
-                          x2 - p.k_mage * ((p.k_adjust_tate_step + 4) - tate)
-                          / (p.k_adjust_tate_step + 4), y2,
+                          x2 - p.k_mage * (((p.k_adjust_tate_step + 4) - tate)
+                                           / (p.k_adjust_tate_step + 4)), y2,
                           1, 14, int(math.fmod(tate, 10)), hane,
                           math.floor(tate / 10), a3_opt_2)
         else:
