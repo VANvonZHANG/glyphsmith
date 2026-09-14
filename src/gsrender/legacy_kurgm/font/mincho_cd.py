@@ -41,7 +41,7 @@ _NAN = float("nan")
 
 def _js_index(arr: list, i: int) -> float:
     """JS arr[i] 越界（含负索引）→ undefined → 参与算术后为 NaN。"""
-    if -len(arr) <= i < len(arr):
+    if 0 <= i < len(arr):
         return arr[i]
     return _NAN
 
