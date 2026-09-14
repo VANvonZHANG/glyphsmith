@@ -53,7 +53,28 @@ def df_draw_font(font: Font, outline: Outline, stroke) -> None:
         else:
             cd_draw_line(font, outline, x1, y1, x2, y2, a2_100, a3_100)
     elif a1_100 in (2, 12):
-        pass    # T8 分段移植：case 2/12 待实现
+        if a3_100 == 4:
+            if x2 == x3:
+                dx1, dy1 = 0, -font.params.k_mage                  # ?????
+            elif y2 == y3:
+                dx1, dy1 = -font.params.k_mage, 0                  # ?????
+            else:
+                dx1, dy1 = normalize(x2 - x3, y2 - y3, font.params.k_mage)
+            tx1 = x3 + dx1
+            ty1 = y3 + dy1
+            cd_draw_curve(font, outline, x1, y1, x2, y2, tx1, ty1, a2_100, 1)
+            cd_draw_curve(font, outline, tx1, ty1, x3, y3,
+                          x3 - font.params.k_mage * 2,
+                          y3 - font.params.k_mage * 0.5, 1, 0)
+        elif a3_100 == 5 and a3_opt == 0:
+            tx1 = x3 + font.params.k_mage
+            ty1 = y3
+            tx2 = tx1 + font.params.k_mage * 0.5
+            ty2 = y3 - font.params.k_mage * 2
+            cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3, a2_100, 1)
+            cd_draw_curve(font, outline, x3, y3, tx1, ty1, tx2, ty2, 1, 0)
+        else:
+            cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3, a2_100, a3_100)
     elif a1_100 == 3:
         pass    # T8 分段移植：case 3 待实现
     elif a1_100 == 4:
