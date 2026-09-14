@@ -125,6 +125,21 @@ def test_expand_transform_op():
     assert isinstance(items[1], TransformOp) and items[1].kind == 99
 
 
+def test_expand_transform_op_carries_a3():
+    # Fix（task-7 关切 1）：0:N 行的 cols[2]（= 源 a3_100）必须进 TransformOp.a3，
+    # 否则 kind=99 的旋转档在 drawers 管线里退化为 a3=0 → df_transform no-op
+    from gsf.kage2 import parse_kage2
+    g = parse_kage2("1:0:2:20:40:180:40$0:99:1:0:0:200:200")
+    t = expand(g, {g.name: g})[1]
+    assert t.kind == 99 and t.a3 == 1
+    g = parse_kage2("1:0:2:20:40:180:40$0:99:3:0:0:200:200")
+    t = expand(g, {g.name: g})[1]
+    assert t.kind == 99 and t.a3 == 3
+    g = parse_kage2("1:0:2:20:40:180:40$0:98:0:0:0:200:200")
+    t = expand(g, {g.name: g})[1]
+    assert t.kind == 98 and t.a3 == 0
+
+
 def test_expand_rawop_skipped():
     from gsf.kage2 import parse_kage2
     g = parse_kage2("0:1:0:0:0:0:0$1:0:2:20:40:180:40")  # 未知 type-0 行 → RawOp

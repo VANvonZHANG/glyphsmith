@@ -247,7 +247,7 @@ def test_get_drawers_transformop_applies_df_transform():
     from gsrender.legacy_kurgm.rstroke import RStroke
     f = select_font(Shotai.K_GOTHIC)
     drawers = f.get_drawers([RStroke(1, 0, 0, 20, 50, 180, 50, 0, 0, 0, 0),
-                             TransformOp(97, 0, 0, 200, 200)])
+                             TransformOp(97, 0, 0, 0, 200, 200)])
     assert len(drawers) == 2
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
     before = [list(c) for c in o.contours]
@@ -255,3 +255,13 @@ def test_get_drawers_transformop_applies_df_transform():
     assert [list(c) for c in o.contours] == before
     drawers[1](o)                     # TransformOp → df_transform
     assert o.contours == [[(10.0, 180.0, 0), (30.0, 180.0, 0)]]
+
+
+def test_get_drawers_transformop_rotates_with_a3():
+    # Fix（task-7 关切 1）：TransformOp.a3 必须传进 df_transform——0:99:1 行经
+    # 管线与直接调 df_transform(a3=1)（K:53-58 rotate90）结果一致，而非 no-op
+    f = select_font(Shotai.K_MINCHO)
+    drawers = f.get_drawers([TransformOp(99, 1, 0, 0, 200, 200)])
+    o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
+    drawers[0](o)
+    assert o.contours == [[(180.0, 10.0, 0), (180.0, 30.0, 0)]]

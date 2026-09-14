@@ -65,9 +65,10 @@ def df_transform(outline: Outline, kind: int, x1: float, y1: float,
     a2_100，属上游约定；此处显式拒绝防呆）。kind 合法但无分支命中
     （a2_opt≠0，或 99 而 a3∉{1,2,3}/a3_opt≠0）时与源一致静默 no-op。
 
-    注：expansion.TransformOp（T5 接口）只携带 kind/x1/y1/x2/y2，丢了原行
-    的 a3——经该管线来的 kind=99 走 a3=0 默认值即 no-op；带完整 stroke 上下文
-    的调用方（T8 dfDrawFont case 0）应显式传 a3/a2_opt/a3_opt。
+    注：expansion.TransformOp 现携带 a3（原行 cols[2]=源 a3_100，修复于
+    task-7 fix），字体层经 `df_transform(..., a3=op.a3)` 透传；a2_opt/a3_opt
+    （option 位）该通道不透传，保持默认 0。带完整 stroke 上下文的调用方
+    （T8 dfDrawFont case 0）仍应显式传 a3/a2_opt/a3_opt。
     """
     if kind == 98 and a2_opt == 0:
         dx, dy, op = x1 + x2, 0, _OP_REFLECT_X

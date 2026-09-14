@@ -202,10 +202,10 @@ class Font:
 
     def _transform_drawer(self, op: TransformOp) -> Drawer:
         def draw(outline: Outline) -> None:
-            # TransformOp 只有 kind/x1/y1/x2/y2（T5 接口）：kind=99 的档位
-            # 信息已在 expansion 丢失 → a3=0 → 与源一致的 no-op（见
-            # df_transform docstring 的注）
-            df_transform(outline, op.kind, op.x1, op.y1, op.x2, op.y2)
+            # op.a3（源 a3_100）是 kind=99 的旋转档（1/2/3）；a2_opt/a3_opt
+            #（option 位）在 expansion 的 RawOp 通道不透传，保持默认 0
+            df_transform(outline, op.kind, op.x1, op.y1, op.x2, op.y2,
+                         a3=op.a3)
         return draw
 
     def _stroke_drawer(self, stroke: RStroke) -> Drawer:

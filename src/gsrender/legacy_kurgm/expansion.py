@@ -16,9 +16,15 @@ class CycleError(Exception):
 
 
 class TransformOp(NamedTuple):
-    """type-0 的 97/98/99 特殊行（dfcd 调整操作）：透传给字体层，不参与几何。"""
+    """type-0 的 97/98/99 特殊行（dfcd 调整操作）：透传给字体层，不参与几何。
+
+    a3 = 原行 cols[2]（kurgm Stroke.a3_100）：kind=99 的旋转档位
+    （1/2/3 → 顺时针 90/180/270 度），字体层据此调 df_transform(a3=...)；
+    kind=97/98（翻转）时为 0，不参与语义。
+    """
 
     kind: int
+    a3: int
     x1: int
     y1: int
     x2: int
@@ -77,8 +83,8 @@ def _expand(glyph: Glyph, parts: dict[str, Glyph],
         elif isinstance(op, RawOp):
             cols = op.cols
             if len(cols) >= 7 and cols[0] == "0" and cols[1] in ("97", "98", "99"):
-                items.append(TransformOp(int(cols[1]), int(cols[3]), int(cols[4]),
-                                         int(cols[5]), int(cols[6])))
+                items.append(TransformOp(int(cols[1]), int(cols[2]), int(cols[3]),
+                                         int(cols[4]), int(cols[5]), int(cols[6])))
             else:
                 warnings.append(f"raw op skipped: {':'.join(cols[:4])}")
     return items
