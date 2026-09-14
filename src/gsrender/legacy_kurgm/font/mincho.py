@@ -12,8 +12,9 @@
 Kakato :513-536 / Uroko :538-564 / Uroko2 :566-609 / Kirikuchi :611-634；
 打包初值 :370-383；骨架 :363-393；getDrawers :356-360。参数表（kAdjust*
 等）从 T7 FontParams 取（已逐字段抄源 :303-353）。几何判定用 RStroke 的
-is_cross/is_cross_box（T4）。dfDrawFont（:75-222，含 mincho/cd.ts 分发）
-是 T10 的活，本模块只留 no-op 占位但分发结构与参数传递已定型。
+is_cross/is_cross_box（T4）。dfDrawFont（:88-221 的 switch(a1_100) 分发）
+已随 T10 落地：本模块 df_draw_font 直译分发，mincho/cd.ts 的 cdDraw*
+表在 mincho_cd.py（golden m: 子集 3240/3240 绿）。
 
 Gothic 对照（T8 结论）：Gothic 覆写 getDrawers 直接画原始 Stroke，
 完全跳过 adjustStrokes——七连管是 Mincho 专用。
@@ -28,7 +29,7 @@ from ..expansion import TransformOp
 from ..geom2d import _round
 from ..rstroke import RStroke
 from .base import Drawer, Font, Shotai
-from .gothic_cd import normalize   # K/util.ts:11-18；共享工具留在 gothic_cd（T10 决策）
+from .gothic_cd import _hypot, normalize   # K/util.ts；共享工具留在 gothic_cd（T10 决策）
 from .mincho_cd import cd_draw_bezier, cd_draw_curve, cd_draw_line
 
 
@@ -151,7 +152,7 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
             cd_draw_line(font, outline, tx2, ty2, x3, y3,
                          6, a3_100, mage, opt2, opt2)           # bolder by force
     elif a1_100 == 4:
-        rate = math.hypot(x3 - x2, y3 - y2) / 120 * 6
+        rate = _hypot(x3 - x2, y3 - y2) / 120 * 6
         if rate > 6:
             rate = 6
         if x1 == x2 and y1 == y2:
@@ -375,7 +376,7 @@ class MinchoFont(Font):
                     if st.y1 == st.y2:              # YOKO
                         tlen = st.x2 - st.x1        # should be Math.abs(...)?
                     else:
-                        tlen = math.hypot(st.y2 - st.y1, st.x2 - st.x1)
+                        tlen = _hypot(st.y2 - st.y1, st.x2 - st.x1)
                     if _round(tlen) < p.k_adjust_uroko_length[k] \
                             or any(st2 is not st and st2.is_cross(tx, ty, st.x2, st.y2)
                                    for st2 in adj_strokes):

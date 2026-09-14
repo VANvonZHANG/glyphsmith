@@ -33,7 +33,8 @@ import math
 
 from gsrender.outline import Outline
 
-from .gothic_cd import _Pen, _generate_fatten_curve, normalize, push_polygon
+from .gothic_cd import (_Pen, _generate_fatten_curve, _hypot, normalize,
+                        push_polygon)
 
 _NAN = float("nan")
 
@@ -110,8 +111,8 @@ def cd_draw_curve_u(font, outline,
     corner_offset = 0
     if x1 is not None and y1 is not None \
             and (a1 == 22 or a1 == 27) and a2 == 7 and k_min_width_t > 6:
-        contour_length = math.hypot(sx1 - x1, sy1 - y1) \
-            + math.hypot(sx2 - sx1, sy2 - sy1) + math.hypot(x2_ - sx2, y2_ - sy2)
+        contour_length = _hypot(sx1 - x1, sy1 - y1) \
+            + _hypot(sx2 - sx1, sy2 - sy1) + _hypot(x2_ - sx2, y2_ - sy2)
         if contour_length < 100:
             corner_offset = (k_min_width_t - 6) * ((100 - contour_length) / 100)
             x1 += corner_offset
@@ -228,8 +229,8 @@ def _draw_curve_body(font, outline,
         # generating fatten curve -- end
     else:
         hosomi = 0.5
-        if math.hypot(x2 - x1, y2 - y1) < 50:
-            hosomi += 0.4 * (1 - math.hypot(x2 - x1, y2 - y1) / 50)
+        if _hypot(x2 - x1, y2 - y1) < 50:
+            hosomi += 0.4 * (1 - _hypot(x2 - x1, y2 - y1) / 50)
 
         if (a1 == 7 or a1 == 27) and a2 == 0:      # L2RD: fatten
             def deltad_func(t): return t ** hosomi * p.k_l2r_dfatten

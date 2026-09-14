@@ -28,6 +28,27 @@ _NAN = float("nan")
 
 
 # ── K/util.ts:5-18 hypot / normalize ────────────────────────────
+def _hypot(x: float, y: float) -> float:
+    """V8 Math.hypot 的忠实复刻（K/util.ts:8 = Math.hypot 绑定）。
+
+    Python math.hypot 是（近似）正确舍入，V8 用 max*sqrt((x/max)²+(y/max)²)
+    的缩放算法——两者有可观测 ULP 差（实测 hypot(-9.41…,17.64…) → V8
+    19.999999999999996 vs Python 20.0，直接翻转 0.1 网格 floor 与指纹）。
+    200k 随机对全量对拍一致。NaN/Inf 语义：任一 ±Inf → +Inf（压过 NaN）；
+    否则任一 NaN → NaN；全零 → +0。两参版签名（kurgm 只用两参）。
+    """
+    if math.isinf(x) or math.isinf(y):
+        return float("inf")
+    if math.isnan(x) or math.isnan(y):
+        return _NAN
+    m = abs(x) if abs(x) > abs(y) else abs(y)
+    if m == 0:
+        return 0.0
+    nx = x / m
+    ny = y / m
+    return m * math.sqrt(nx * nx + ny * ny)
+
+
 def normalize(x: float, y: float, magnitude: float = 1) -> tuple[float, float]:
     """K/util.ts:11-18 normalize：同角度、新模长的向量。
 
@@ -37,7 +58,7 @@ def normalize(x: float, y: float, magnitude: float = 1) -> tuple[float, float]:
     """
     if x == 0 and y == 0:
         return (magnitude if math.copysign(1.0, x) > 0 else -magnitude, 0)
-    k = magnitude / math.hypot(x, y)
+    k = magnitude / _hypot(x, y)
     return (x * k, y * k)
 
 

@@ -18,7 +18,8 @@ import math
 from gsrender.outline import Outline
 
 from .base import Drawer, Font, Shotai
-from .gothic_cd import cd_draw_bezier, cd_draw_curve, cd_draw_line, normalize
+from .gothic_cd import (_hypot, cd_draw_bezier, cd_draw_curve, cd_draw_line,
+                        normalize)
 from .transform import df_transform
 
 
@@ -105,7 +106,7 @@ def df_draw_font(font: Font, outline: Outline, stroke) -> None:
         else:
             cd_draw_line(font, outline, tx2, ty2, x3, y3, 1, a3_100)
     elif a1_100 == 4:
-        rate = math.hypot(x3 - x2, y3 - y2) / 120 * 6
+        rate = _hypot(x3 - x2, y3 - y2) / 120 * 6
         if rate > 6:
             rate = 6
         if x1 == x2 and y1 == y2:
