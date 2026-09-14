@@ -124,6 +124,32 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
                           a2_100 + kirikuchi * 100,
                           15 if (a3_100 == 5 and a3_opt == 0) else a3_100,
                           a2_opt_2, a3_opt_1, a2_opt_3, a3_opt_2)
+    elif a1_100 == 3:
+        if x1 == x2 and y1 == y2:
+            dx1, dy1 = 0, p.k_mage                                # ?????
+        else:
+            dx1, dy1 = normalize(x1 - x2, y1 - y2, p.k_mage)
+        tx1 = x2 + dx1
+        ty1 = y2 + dy1
+        if x2 == x3 and y2 == y3:
+            dx2, dy2 = 0, -p.k_mage                               # ?????
+        else:
+            dx2, dy2 = normalize(x3 - x2, y3 - y2, p.k_mage)
+        tx2 = x2 + dx2
+        ty2 = y2 + dy2
+
+        cd_draw_line(font, outline, x1, y1, tx1, ty1,
+                     a2_100 + a2_opt_1 * 100, 1, tate, 0, 0)
+        cd_draw_curve(font, outline, tx1, ty1, x2, y2, tx2, ty2,
+                      1, 1, 0, 0, tate, mage)
+
+        if not (a3_100 == 5 and a3_opt_1 == 0
+                and not ((x2 < x3 and x3 - tx2 > 0)
+                         or (x2 > x3 and tx2 - x3 > 0))):       # for closer position
+            opt2 = 0 if (a3_100 == 5 and a3_opt_1 == 0) \
+                else a3_opt_1 + mage * 10
+            cd_draw_line(font, outline, tx2, ty2, x3, y3,
+                         6, a3_100, mage, opt2, opt2)           # bolder by force
     elif a1_100 == 12:
         cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3,
                       a2_100 + a2_opt_1 * 100, 1, a2_opt_2, 0, a2_opt_3, 0)
