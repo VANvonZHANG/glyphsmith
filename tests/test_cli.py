@@ -77,3 +77,53 @@ def test_sample_reproducible(tmp_path):
     _, r1 = _run(["sample", "--corpus", str(p), "--n", "5", "--seed", "1"])
     _, r2 = _run(["sample", "--corpus", str(p), "--n", "5", "--seed", "1"])
     assert r1["data"]["names"] == r2["data"]["names"]
+
+
+# ── T14 审查修复（M2 写盘契约 / M1 笔数不等 warning）──
+
+@pytest.fixture
+def slash(tmp_path):
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\nglyph a/b\nstroke line head flat tail flat (10,10)->(100,60)\n",
+                 encoding="utf-8")
+    return p
+
+
+def test_render_slash_name_sanitized_to_filename(slash, tmp_path, monkeypatch):
+    # 名字里的路径分隔符清洗后写盘（T14 审查 M2：a/b 曾直接拼进文件名）
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run(["render", "a/b", "--corpus", str(slash), "--out", "png"])
+    assert code == 0 and payload["status"] == "ok"
+    assert payload["data"]["path"] == "a_b.png"
+    assert (tmp_path / "a_b.png").exists()
+
+
+def test_render_write_failure_exit2_json_not_traceback(mini, tmp_path, monkeypatch):
+    # 写盘失败 → exit 2 + JSON 错误（此前 raw traceback + exit 1 + stdout 无 JSON）
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "g.png").mkdir()          # 目标名被目录占用 → IsADirectoryError(OSError)
+    (tmp_path / "g.outline.json").mkdir()
+    for out in ("png", "outline.json"):
+        code, payload = _run(["render", "g", "--corpus", str(mini), "--out", out])
+        assert code == 2 and payload["status"] == "error"
+        assert "g" in payload["data"]["error"]
+
+
+def test_sample_negative_n_exit2(tmp_path):
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (10,10)->(100,60)\n",
+                 encoding="utf-8")
+    code, payload = _run(["sample", "--corpus", str(p), "--n", "-1"])
+    assert code == 2 and payload["status"] == "error"
+
+
+def test_compare_stroke_count_mismatch_warns(tmp_path):
+    p = tmp_path / "c.gsf"
+    p.write_text(
+        "gsf/1\nglyph one\nstroke line head flat tail flat (10,10)->(100,60)\n\n"
+        "glyph two\nstroke line head flat tail flat (10,10)->(100,60)\n"
+        "stroke line head flat tail flat (20,20)->(80,80)\n", encoding="utf-8")
+    code, payload = _run(["compare", "one", "two", "--corpus", str(p)])
+    assert code == 0
+    assert payload["data"]["per_stroke"] == []      # 笔数不等 → 逐笔 diff 跳过
+    assert "stroke count mismatch: 1 vs 2; per_stroke skipped" in payload["warnings"]

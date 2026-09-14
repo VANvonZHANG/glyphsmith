@@ -30,6 +30,19 @@ def _fail(code: int, message: str, hints=None) -> None:
     raise SystemExit(code)
 
 
+def _safe_filename(name: str) -> str:
+    """字形名 → 安全文件名：路径分隔符（/、\\ 及 os 层 sep/altsep）换 `_`。
+
+    T14 审查 M2：GlyphWiki 名含 `/` 时曾直接拼进写盘路径（render --out png
+    raw traceback）。gsr batch（T16）与本处共用同一助手。
+    """
+    import os
+    for sep in {"/", "\\", os.sep, os.altsep}:
+        if sep:
+            name = name.replace(sep, "_")
+    return name
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="gsr", description="GSF 字形渲染器：stdout 单行 JSON 契约，agent 原生")
@@ -84,13 +97,19 @@ def _cmd_render(args, corpus):
     if args.out == "svg":             # 内联，不落盘
         data = {"name": args.name, "svg": out.to_svg()}
     elif args.out == "png":
-        path = f"{args.name}.png"
-        rasterize(out).save(path)
+        path = f"{_safe_filename(args.name)}.png"
+        try:
+            rasterize(out).save(path)
+        except OSError as e:           # 写盘契约（T14 审查 M2）：JSON 错误 + exit 2
+            _fail(2, f"cannot write {path}: {e}")
         data = {"name": args.name, "path": path}
     else:                             # outline.json：{"contours": [[(x,y,off), ...], ...]}
-        path = f"{args.name}.outline.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"contours": out.contours}, f, ensure_ascii=False)
+        path = f"{_safe_filename(args.name)}.outline.json"
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"contours": out.contours}, f, ensure_ascii=False)
+        except OSError as e:
+            _fail(2, f"cannot write {path}: {e}")
         data = {"name": args.name, "path": path}
     return data, list(r.warnings)     # render 后端会向 r.warnings 追加展开期警告
 
@@ -157,6 +176,8 @@ def _cmd_list(args, corpus):
 
 
 def _cmd_sample(args, corpus):
+    if args.n < 0:                     # T14 审查 M2：负值曾 raw traceback
+        _fail(2, f"--n must be a non-negative integer, got {args.n}")
     names = list(corpus.iter_names())
     rng = random.Random(args.seed)     # scripts/sample_dump.py 同款：seed 定 rng
     return {"names": rng.sample(names, min(args.n, len(names))),
@@ -173,6 +194,9 @@ def _cmd_compare(args, corpus):
     if len(sa) == len(sb):             # 笔画数不等时逐笔 zip 无意义，留空
         result.per_stroke = compare_separated(sa, sb)
     warns = list(ra.warnings) + [w for w in rb.warnings if w not in ra.warnings]
+    if len(sa) != len(sb):             # T14 审查 M1：静默留空改为显式 warning
+        warns.append(f"stroke count mismatch: {len(sa)} vs {len(sb)}; "
+                     "per_stroke skipped")
     return result.to_dict(), warns
 
 
