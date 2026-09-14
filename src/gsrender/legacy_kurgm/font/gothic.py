@@ -18,7 +18,7 @@ import math
 from gsrender.outline import Outline
 
 from .base import Font, Shotai
-from .gothic_cd import cd_draw_curve, cd_draw_line, normalize
+from .gothic_cd import cd_draw_bezier, cd_draw_curve, cd_draw_line, normalize
 from .transform import df_transform
 
 
@@ -134,7 +134,30 @@ def df_draw_font(font: Font, outline: Outline, stroke) -> None:
         else:
             cd_draw_line(font, outline, tx2, ty2, x3, y3, 1, a3_100)
     elif a1_100 == 6:
-        pass    # T8 分段移植：case 6 待实现
+        if a3_100 == 4:
+            if x3 == x4:
+                dx1, dy1 = 0, -font.params.k_mage                  # ?????
+            elif y3 == y4:
+                dx1, dy1 = -font.params.k_mage, 0                  # ?????
+            else:
+                dx1, dy1 = normalize(x3 - x4, y3 - y4, font.params.k_mage)
+            tx1 = x4 + dx1
+            ty1 = y4 + dy1
+            cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, tx1, ty1, a2_100, 1)
+            cd_draw_curve(font, outline, tx1, ty1, x4, y4,
+                          x4 - font.params.k_mage * 2,
+                          y4 - font.params.k_mage * 0.5, 1, 0)
+        elif a3_100 == 5 and a3_opt == 0:
+            tx1 = x4 - font.params.k_mage
+            ty1 = y4
+            tx2 = x4 + font.params.k_mage * 0.5
+            ty2 = y4 - font.params.k_mage * 2
+            # 源此处留有按中点拆两段 cdDrawCurve 的注释掉旧实现，照抄现行为
+            cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, tx1, ty1, a2_100, 1)
+            cd_draw_curve(font, outline, tx1, ty1, x4, y4, tx2, ty2, 1, 0)
+        else:
+            # 源此处留有按中点拆两段 cdDrawCurve 的注释掉旧实现，照抄现行为
+            cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, x4, y4, a2_100, a3_100)
     elif a1_100 == 7:
         pass    # T8 分段移植：case 7 待实现
     elif a1_100 == 9:
