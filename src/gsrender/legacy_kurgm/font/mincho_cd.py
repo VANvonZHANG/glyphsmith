@@ -33,6 +33,8 @@ import math
 
 from gsrender.outline import Outline
 
+from ..curve import divide_curve as _divide_curve
+from ..curve import find_offcurve as _find_offcurve
 from .gothic_cd import (_Pen, _generate_fatten_curve, _hypot, normalize,
                         push_polygon)
 
@@ -53,26 +55,10 @@ def _floor_poly(pts: list[tuple[float, float, int]]) -> list[tuple[float, float,
             for x, y, off in pts]
 
 
-# ── K/curve.ts:4-26 divide_curve（kUseCurve 分支用；find_offcurve 是 T11）──
-def _divide_curve(x1, y1, sx1, sy1, x2, y2, curve):
-    rate = 0.5
-    cut = math.floor(len(curve) * rate)
-    cut_rate = cut / len(curve)
-    tx1 = x1 + (sx1 - x1) * cut_rate
-    ty1 = y1 + (sy1 - y1) * cut_rate
-    tx2 = sx1 + (x2 - sx1) * cut_rate
-    ty2 = sy1 + (y2 - sy1) * cut_rate
-    tx3 = tx1 + (tx2 - tx1) * cut_rate
-    ty3 = ty1 + (ty2 - ty1) * cut_rate
-
-    # must think about 0 : <0
-    return cut, ([x1, y1, tx1, ty1, tx3, ty3], [tx3, ty3, tx2, ty2, x2, y2])
-
-
-def _find_offcurve(curve, sx, sy):
-    """K/curve.ts:31-51 find_offcurve —— T11 移植（ternarySearchMin 未随
-    T10 落地；kUseCurve=False 的 m: 子集不进本函数）。"""
-    raise NotImplementedError("find_offcurve: T11 (curve mode)")
+# ── K/curve.ts 移植（T11 落地于 ..curve）────────────────────────
+# _divide_curve / _find_offcurve 见模块顶部 import（别名保持调用点不变）；
+# generateFattenCurve（curve.ts:53-97）仍由 gothic_cd._generate_fatten_curve
+# 提供（T8 宿主，mincho 两个分支共用）。
 
 
 # ── K/font/mincho/cd.ts:8-122 cdDrawCurveU ──────────────────────
