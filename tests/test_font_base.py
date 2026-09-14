@@ -245,13 +245,15 @@ def test_get_drawers_pipeline_smoke():
 
 def test_get_drawers_transformop_applies_df_transform():
     from gsrender.legacy_kurgm.rstroke import RStroke
+    # T8 起 K_GOTHIC 为真 GothicFont（RStroke 会真画轮廓）；本测试只验证
+    # 分发语义，故用 a1=9（dfDrawFont case 9 无操作）的笔画占位
     f = select_font(Shotai.K_GOTHIC)
-    drawers = f.get_drawers([RStroke(1, 0, 0, 20, 50, 180, 50, 0, 0, 0, 0),
+    drawers = f.get_drawers([RStroke(9, 0, 0, 20, 50, 180, 50, 0, 0, 0, 0),
                              TransformOp(97, 0, 0, 0, 200, 200)])
     assert len(drawers) == 2
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
     before = [list(c) for c in o.contours]
-    drawers[0](o)                     # RStroke → no-op 占位（T8/T10 替换）
+    drawers[0](o)                     # RStroke a1=9 → case 9 无操作
     assert [list(c) for c in o.contours] == before
     drawers[1](o)                     # TransformOp → df_transform
     assert o.contours == [[(10.0, 180.0, 0), (30.0, 180.0, 0)]]
