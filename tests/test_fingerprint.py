@@ -7,6 +7,7 @@ from gsrender.outline import Outline
     (0.0, "0"), (200.0, "200"), (-0.0, "0"), (5.5, "5.5"),
     (1e-7, "1e-7"), (0.000001, "0.000001"), (1e16, "10000000000000000"),
     (1e21, "1e+21"), (-2.25, "-2.25"), (0.1, "0.1"),
+    (float("nan"), "NaN"), (float("inf"), "Infinity"), (float("-inf"), "-Infinity"),
 ])
 def test_js_num(v, expected):
     assert js_num(v) == expected

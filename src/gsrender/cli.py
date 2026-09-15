@@ -242,6 +242,8 @@ def _cmd_batch(args, _corpus=None):
         stats = batch_render(args.corpus, args.out, backend=args.backend,
                              workers=args.workers,
                              dump=args.dump or _looks_like_dump(args.corpus))
+    except FileNotFoundError:          # 语料缺失：上抛 main 层（hints 指向语料文件）
+        raise
     except OSError as e:                # M2 写盘契约：exit 2 + JSON
         _fail(2, f"cannot write to {args.out}: {e}")
     return {**stats, "outdir": args.out}, []

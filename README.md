@@ -88,3 +88,7 @@ stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
   （0 除数 → ±Inf/NaN，120 字形）；
 - box 聚合 min/max：JS `Math.min` 的 NaN 传染语义（84 字形多画）；
   与 `_round`/指纹 `js_num` 的 NaN/Infinity 穿透。
+
+非自身引用 `X@N`（该版本行不在 newest dump）时，gsrender 回退渲染 newest X
+并发 `version ref fallback` 警告（corpus.py），而 kurgm 的 kBuhin 为精确匹配、
+查不到即静默跳过该部件——两侧长期存在的语义差异面。
