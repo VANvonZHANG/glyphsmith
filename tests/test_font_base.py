@@ -267,3 +267,22 @@ def test_get_drawers_transformop_rotates_with_a3():
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
     drawers[0](o)
     assert o.contours == [[(180.0, 10.0, 0), (180.0, 30.0, 0)]]
+
+
+# ── T16 全量冒烟发现的移植缺口：push_polygon 的 JS floor 语义 ──
+
+def test_push_polygon_nan_dropped_not_raised():
+    # K/polygons.ts:31-47：先 polygon.floor()（Math.floor(NaN)=NaN，不抛），
+    # 再逐点 isNaN 检查丢弃整个多边形。Python math.floor(NaN/±Inf) 抛异常
+    # → 全量 dump 27 个字形（zackroy-san_* 等）整字形 err，而 kurgm 能渲染。
+    # 铁律 1 直译：NaN/±Inf 穿透 floor；NaN 多边形丢弃；Inf 不拦截（源行为，
+    # 交由指纹层报 non-finite）。
+    from gsrender.legacy_kurgm.font.gothic_cd import push_polygon
+
+    o = Outline()
+    push_polygon(o, [(10, 10, 0), (50, 10, 0), (50, 50, 0)])            # 正常
+    push_polygon(o, [(float("nan"), 10, 0), (50, 10, 0), (50, 50, 0)])  # NaN → 丢
+    push_polygon(o, [(float("inf"), 10, 0), (50, 10, 0), (50, 50, 0)])  # Inf → 留
+    assert len(o.contours) == 2
+    assert o.contours[0] == [(10.0, 10.0, 0), (50.0, 10.0, 0), (50.0, 50.0, 0)]
+    assert o.contours[1][0][0] == float("inf")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .geom2d import is_cross, is_cross_box
+from .geom2d import is_cross, is_cross_box, js_div, js_floor, js_max, js_min
 
 
 def _js_mod(a: int, b: int) -> int:
@@ -17,12 +17,13 @@ def _js_mod(a: int, b: int) -> int:
 
 
 def stretch(dp: int, sp: int, p: int, mn: int, mx: int) -> int:
-    """K/stroke.ts:3-20。Math.floor 语义 = Python math.floor（向负无穷）。"""
+    """K/stroke.ts:3-20。除法/floor 走 JS 语义（0 除数 → ±Inf/NaN 穿透，
+    NaN 坐标的多边形由 push_polygon 丢弃——T16 全量闭包冒烟 119 字形）。"""
     if p < sp + 100:
         p1, p3, p2, p4 = mn, mn, sp + 100, dp + 100
     else:
         p1, p3, p2, p4 = sp + 100, dp + 100, mx, mx
-    return math.floor(((p - p1) / (p2 - p1)) * (p4 - p3) + p3)
+    return js_floor(js_div(p - p1, p2 - p1) * (p4 - p3) + p3)
 
 
 class RStroke:
@@ -98,13 +99,18 @@ class RStroke:
         inf = float("inf")
         min_x, min_y, max_x, max_y = inf, inf, -inf, -inf
         a1 = self.a1_100 if self.a1_opt == 0 else 6
+        # min/max 走 JS 语义（NaN 传染，K/stroke.ts Math.min/max）——退化
+        # stretch 的 NaN 坐标须把 box 染成 NaN，进而让外层 stretch 全 NaN
+        # （多边形由 push 丢弃）；Python min 会静默丢弃 NaN 保有限值。
         if a1 not in (0, 1, 2, 3, 4, 99):   # default 入口（含 x4）
-            min_x, max_x = min(min_x, self.x4), max(max_x, self.x4)
-            min_y, max_y = min(min_y, self.y4), max(max_y, self.y4)
+            min_x, max_x = js_min(min_x, self.x4), js_max(max_x, self.x4)
+            min_y, max_y = js_min(min_y, self.y4), js_max(max_y, self.y4)
         if a1 not in (0, 1, 99):            # case 2/3/4 体 + default fall-through
-            min_x, max_x = min(min_x, self.x3), max(max_x, self.x3)
-            min_y, max_y = min(min_y, self.y3), max(max_y, self.y3)
+            min_x, max_x = js_min(min_x, self.x3), js_max(max_x, self.x3)
+            min_y, max_y = js_min(min_y, self.y3), js_max(max_y, self.y3)
         if a1 != 0:                         # case 1/99 体 + 上游 fall-through
-            min_x, max_x = min(min_x, self.x1, self.x2), max(max_x, self.x1, self.x2)
-            min_y, max_y = min(min_y, self.y1, self.y2), max(max_y, self.y1, self.y2)
+            min_x, max_x = js_min(js_min(min_x, self.x1), self.x2), \
+                js_max(js_max(max_x, self.x1), self.x2)
+            min_y, max_y = js_min(js_min(min_y, self.y1), self.y2), \
+                js_max(js_max(max_y, self.y1), self.y2)
         return {"minX": min_x, "maxX": max_x, "minY": min_y, "maxY": max_y}

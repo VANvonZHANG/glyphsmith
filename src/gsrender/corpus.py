@@ -20,6 +20,10 @@ class ResolveResult:
 class Corpus:
     """名字 → KAGE 数据串的惰性字典；parse 结果缓存。"""
 
+    # parse 缓存上限：全量冒烟（222 万字形）会把缓存推到 ~3.5GB/进程
+    # （实测 ~1.6KB/字形）；超限整体清空——行为透明，缓存只影响性能。
+    _CACHE_LIMIT = 200_000
+
     def __init__(self, data: dict[str, str]):
         self._data = data
         self._cache: dict = {}
@@ -62,6 +66,8 @@ class Corpus:
     # ── 解析 ──
     def glyph_of(self, name: str):
         if name not in self._cache:
+            if len(self._cache) >= self._CACHE_LIMIT:
+                self._cache.clear()    # 粗粒度封顶：整清后重建，行为不变
             if name not in self._data:
                 raise UnknownGlyphError(name)
             from gsf.kage2 import parse_kage2
@@ -92,7 +98,10 @@ class Corpus:
             base = ref.partition("@")[0]
             if ref in self._data:
                 target = ref
-            elif base in self._data:            # @版本兜底
+            elif base in self._data and base != name:
+                # @版本兜底。base != name：self@N 历史快照自引用不兜底
+                # （newest-only 语料没有 X@N 行，回退到自身是假环——
+                # T16 全量冒烟 94 例；kurgm 精确匹配查不到即跳过）
                 target = base
                 warnings.append(f"version ref fallback: {ref} -> {base}")
             else:

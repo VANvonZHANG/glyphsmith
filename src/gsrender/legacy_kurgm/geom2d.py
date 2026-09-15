@@ -13,8 +13,44 @@ def _round(v: float, rate: float = 1e8) -> float:
     JS Math.round 是 half-up（0.5 向 +∞），Python round 是 banker's rounding，
     故用 math.floor(x + 0.5) 直译（仅 0.49999999999999994 级浮点边界与 JS
     有已知差异；KAGE 坐标域内叉积均为整数值乘 1e5，不受影响）。
+    floor 走 js_floor：JS Math.round(NaN)=NaN 穿透（T16 闭包冒烟 2 字形
+    在此 ValueError）。
     """
-    return math.floor(v * rate + 0.5) / rate
+    return js_floor(v * rate + 0.5) / rate
+
+
+def js_div(a: float, b: float) -> float:
+    """IEEE-754 除法（JS 语义）：b==0 → ±Inf / 0/0 → NaN，不抛
+    ZeroDivisionError（T16 全量闭包冒烟：119 字形退化 box 在 stretch 里
+    除零，kurgm 出 NaN 坐标由 push_polygon 丢弃）。"""
+    if b:
+        return a / b
+    if a > 0:
+        return math.inf
+    if a < 0:
+        return -math.inf
+    return math.nan
+
+
+def js_floor(v: float) -> float:
+    """JS Math.floor：NaN/±Inf 原样穿透（Python math.floor 对两者抛）。"""
+    return math.floor(v) if math.isfinite(v) else v
+
+
+def js_min(a: float, b: float) -> float:
+    """JS Math.min：NaN 传染（任一操作数 NaN → NaN）。Python min 遇 NaN
+    比较恒 False 会静默丢弃 NaN 保有限值——闭包嵌套 stretch 的 box 污染
+    语义（T16 冒烟 84 字形多画）依赖本语义。"""
+    if math.isnan(a) or math.isnan(b):
+        return math.nan
+    return a if a <= b else b
+
+
+def js_max(a: float, b: float) -> float:
+    """JS Math.max：同 js_min，NaN 传染。"""
+    if math.isnan(a) or math.isnan(b):
+        return math.nan
+    return a if a >= b else b
 
 
 def _cross(x1: float, y1: float, x2: float, y2: float) -> float:

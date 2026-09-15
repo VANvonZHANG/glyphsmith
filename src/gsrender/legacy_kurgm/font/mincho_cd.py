@@ -257,18 +257,21 @@ def _draw_curve_body(font, outline,
                 point1 = poly2[index]
                 point2 = poly2[index + 1]
                 if point1[1] <= y1 <= point2[1]:
-                    newx1 = point2[0] + (point1[0] - point2[0]) * (y1 - point2[1]) \
-                        / (point1[1] - point2[1])
+                    # 除法走 JS 语义（0 除数 → ±Inf/NaN，多边形由 push 丢弃
+                    # ——T16 闭包冒烟 1 字形 hkcs_m31184 在此除零）
+                    from ..geom2d import js_div
+                    newx1 = point2[0] + js_div((point1[0] - point2[0]) * (y1 - point2[1]),
+                                               point1[1] - point2[1])
                     newy1 = y1
                     point3 = poly[0]
                     point4 = poly[1]
                     if a1 == 132:                 # ?????
-                        newx2 = point3[0] + (point4[0] - point3[0]) * (y1 - point3[1]) \
-                            / (point4[1] - point3[1])
+                        newx2 = point3[0] + js_div((point4[0] - point3[0]) * (y1 - point3[1]),
+                                                   point4[1] - point3[1])
                         newy2 = y1
                     else:
-                        newx2 = point3[0] + (point4[0] - point3[0] + 1) * (y1 - point3[1]) \
-                            / (point4[1] - point3[1])          # "+ 1"?????
+                        newx2 = point3[0] + js_div((point4[0] - point3[0] + 1) * (y1 - point3[1]),
+                                                   point4[1] - point3[1])   # "+ 1"?????
                         newy2 = y1 + 1                          # "+ 1"?????
 
                     del poly2[:index]

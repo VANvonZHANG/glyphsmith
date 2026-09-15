@@ -75,6 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_.add_argument("a"); cmp_.add_argument("b")
     cmp_.add_argument("--backend", default="legacy-kurgm")
     cmp_.add_argument("--font", default="mincho")
+    b = sp("batch", "整库批量渲染 → outdir/<字形名>.svg（multiprocessing）")
+    b.add_argument("--out", required=True, help="输出目录")
+    b.add_argument("--backend", default="legacy-kurgm")
+    b.add_argument("--workers", type=int, default=4)
+    b.add_argument("--dump", action="store_true",
+                   help="语料为 GlyphWiki dump_newest_only.txt"
+                        "（缺省自动识别：首行含 '|' 且非 gsf/ 头）")
     return p
 
 
@@ -132,6 +139,10 @@ def _closure_depth(corpus, name: str) -> int:
         for ref in ref_names(corpus.glyph_of(n)):
             target = None
             for cand in (ref, ref.partition("@")[0]):
+                # self@N 历史快照自引用不兜底（与 Corpus._collect 同规则，
+                # 否则自引用 X@N 的字形 depth 虚 +1）
+                if cand != ref and cand == n:
+                    continue
                 try:
                     corpus.glyph_of(cand)
                 except UnknownGlyphError:
@@ -205,19 +216,52 @@ _HANDLERS = {"render": _cmd_render, "resolve": _cmd_resolve,
              "sample": _cmd_sample, "compare": _cmd_compare}
 
 
+def _looks_like_dump(path: str) -> bool:
+    """dump_newest_only 格式自动识别：首行含 '|' 且非 GSF 头（gsf/1）。
+
+    无 --dump 时兜底——agent 直接把 dump 路径丢给 --corpus 时，from_gsf
+    会静默装出空库（无 glyph 行）而非报错。
+    """
+    with open(path, encoding="utf-8") as f:
+        first = f.readline()
+    return "|" in first and not first.startswith("gsf/")
+
+
+def _cmd_batch(args, _corpus=None):
+    # 语料由 batch_render 自装载（dump 自动识别）：main 的 from_gsf 预载对
+    # batch 既浪费（317MB dump 再读一遍）又常不适用（dump 格式）。
+    from gsrender.batch import batch_render
+    from gsrender.protocol import get_backend
+    if args.workers < 1:                # T14 审查 M2 同款：参数层校验
+        _fail(2, f"--workers must be >= 1, got {args.workers}")
+    try:                                # 未知 backend → exit 2（模块头契约）
+        get_backend(args.backend)
+    except ValueError as e:
+        _fail(2, str(e))
+    try:
+        stats = batch_render(args.corpus, args.out, backend=args.backend,
+                             workers=args.workers,
+                             dump=args.dump or _looks_like_dump(args.corpus))
+    except OSError as e:                # M2 写盘契约：exit 2 + JSON
+        _fail(2, f"cannot write to {args.out}: {e}")
+    return {**stats, "outdir": args.out}, []
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     from gsrender.corpus import Corpus, UnknownGlyphError
     from gsrender.legacy_kurgm.expansion import CycleError
 
     try:
-        corpus = Corpus.from_gsf(args.corpus)
+        if args.cmd == "batch":        # batch 自带语料装载（见 _cmd_batch）
+            data, warnings = _cmd_batch(args)
+        else:
+            corpus = Corpus.from_gsf(args.corpus)
+            data, warnings = _HANDLERS[args.cmd](args, corpus)
     except FileNotFoundError:
         _fail(2, f"corpus file not found: {args.corpus}",
               hints=[{"action": "gsr list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
                       "reason": "用 --corpus 指定语料文件"}])
-    try:
-        data, warnings = _HANDLERS[args.cmd](args, corpus)
     except UnknownGlyphError as e:
         _fail(3, str(e), hints=[
             {"action": f"gsr list --corpus {args.corpus} --like '{e.name[:4]}*'",

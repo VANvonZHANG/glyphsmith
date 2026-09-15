@@ -205,6 +205,21 @@ def test_from_dump_synthetic(tmp_path):
     assert (items[0].x2, items[0].y2) == (100.0, 5.0)  # 200*100/200, 10*100/200
 
 
+def test_glyph_cache_bounded(tmp_path):
+    # T16：全量冒烟（222 万字形）会把 parse 缓存推到 ~3.5GB/进程（实测
+    # ~1.6KB/字形）；超 _CACHE_LIMIT 整体清空，行为透明（仍可解析，缓存只
+    # 影响性能）。
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\n" + "".join(
+        f"glyph g{i}\nstroke line head flat tail flat (10,10)->(100,60)\n\n"
+        for i in range(10)), encoding="utf-8")
+    c = Corpus.from_gsf(p)
+    c._CACHE_LIMIT = 3                     # 注入小上限验证封顶语义
+    for i in range(10):
+        assert c.glyph_of(f"g{i}").name == f"g{i}"
+        assert len(c._cache) <= 3
+
+
 @pytest.mark.skipif(not REAL_DUMP.exists(), reason="真实 dump 不在本机")
 def test_from_dump_real_sample(tmp_path):
     # 只取真实文件前 50 行（318MB 全量不入测试），校验行格式兼容与可解析性。
@@ -226,3 +241,51 @@ def test_from_dump_real_sample(tmp_path):
         g = c.glyph_of(n)
         assert g.name == n
         assert len(g.ops) == len(raw[n].split("$"))
+
+
+# ── T16 全量冒烟发现：self@N 历史快照自引用是假环 ──
+# dump 中 94 例 CycleError 全部形如 glyph X 引用 X@N（历史版本快照）。
+# newest-only 语料没有 X@N 行；@版本兜底回退到 X 自身 → 假 CycleError，
+# 而 kurgm 精确匹配查不到即跳过（桥接验证：94 例修复后指纹全等）。
+# 真自引用（ref X 无 @）仍是环，契约不变。
+
+def test_self_snapshot_ref_not_false_cycle(tmp_path):
+    # X 引用 X@1 + 自有笔画：不是环——X@1 按悬空处理，笔画照常展开
+    from gsf.kage2 import parse_kage2
+    g = parse_kage2("99:0:0:0:0:100:100:X@1:0:0:0$1:0:0:10:10:90:90", "X")
+    warns: list[str] = []
+    items = expand(g, {"X": g}, warns)       # parts 只有自身（冒烟口径）
+    assert len(items) == 1
+    assert any("X@1" in w for w in warns)
+
+
+def test_exact_self_ref_still_cycle(tmp_path):
+    # 真自引用（无 @）环契约不变
+    from gsf.kage2 import parse_kage2
+    g = parse_kage2("99:0:0:0:0:100:100:X:0:0:0", "X")
+    with pytest.raises(CycleError):
+        expand(g, {"X": g})
+
+
+def test_resolve_self_snapshot_dangling(tmp_path):
+    # closure 口径同规则：resolve 不抛 CycleError，X@1 记悬空警告
+    p = tmp_path / "ss.gsf"
+    p.write_text("gsf/1\nglyph X\nref X@1 box(0,0,100,100)\n"
+                 "stroke line head flat tail flat (10,10)->(90,90)\n",
+                 encoding="utf-8")
+    c = Corpus.from_gsf(p)
+    r = c.resolve("X")
+    assert set(r.parts) == {"X"}
+    assert any(w.startswith("dangling ref: X@1") for w in r.warnings)
+    assert len(expand(r.glyph, r.parts)) == 1
+
+
+def test_version_fallback_nonself_unchanged(tmp_path):
+    # 非自身 @ 兜底契约不变（T5）：A 引 base@1，base 在库 → 仍回退
+    p = tmp_path / "vf.gsf"
+    p.write_text("gsf/1\nglyph base\nstroke line head flat tail flat (0,0)->(200,10)\n\n"
+                 "glyph A\nref base@1 box(0,20,100,120)\n", encoding="utf-8")
+    c = Corpus.from_gsf(p)
+    r = c.resolve("A")
+    assert set(r.parts) == {"A", "base"}
+    assert any("base@1 -> base" in w for w in r.warnings)

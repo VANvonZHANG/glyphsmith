@@ -78,3 +78,37 @@ def test_get_box_a1_5_default_entry():
     s = RStroke.from_gsf(Stroke(a1=5, a2=0, a3=0,
                                 pts=((10, 10), (20, 10), (30, 10), (40, 50))))
     assert s.get_box() == {"minX": 10, "maxX": 40, "minY": 10, "maxY": 50}
+
+def test_stretch_zero_denominator_js_semantics():
+    # K/stroke.ts:17 JS 算术语义：0 除数 → ±Inf/NaN（IEEE-754），Math.floor
+    # 穿透，不抛异常。T16 全量闭包冒烟：119 字形因退化 box（p2-p1=0）在
+    # Python 侧抛 ZeroDivisionError 整字形 err，kurgm 则 NaN 坐标 → 多边形
+    # 在 push 丢弃照常渲染。
+    import math
+    assert math.isnan(stretch(0, 0, 50, 100, 150))    # -Inf*0 → NaN
+    v = stretch(50, 0, 50, 100, 150)                   # -Inf*50+100 → -Inf
+    assert math.isinf(v) and v < 0
+    assert math.isnan(stretch(30, 50, 150, 0, 150))    # 0/0 → NaN
+    assert stretch(30, 50, 160, 0, 150) == math.inf    # +Inf*20 → +Inf
+
+def test_get_box_nan_poison_js_semantics():
+    # K/stroke.ts getBox 用 Math.min/max：任一 NaN 操作数 → 结果 NaN（box
+    # 被污染，继而把外层 stretch 的所有坐标变 NaN → 多边形丢弃）。Python
+    # min 遇 NaN 比较恒 False，会静默丢弃 NaN 保有限值——语义相反。
+    # T16 闭包冒烟 84 字形「我们多画」的根因。
+    import math
+    s = RStroke.from_gsf(Stroke(a1=1, a2=0, a3=0, pts=((10, 10), (20, 20))))
+    s.x1 = float("nan")
+    b = s.get_box()
+    assert math.isnan(b["minX"]) and math.isnan(b["maxX"])
+    assert b["minY"] == 10 and b["maxY"] == 20       # y 侧有限不受染
+
+def test_expand_box_nan_poison():
+    # K/kage.ts getBox 聚合同款：Math.min(200, NaN) = NaN（初值 200/0 照抄，
+    # 任一部件 stroke box NaN → 聚合 box NaN → 外层 stretch 全 NaN）
+    import math
+    from gsrender.legacy_kurgm.expansion import _box
+    st = RStroke.from_gsf(Stroke(a1=1, a2=0, a3=0, pts=((10, 10), (20, 20))))
+    st.x1 = float("nan")
+    b = _box([st])
+    assert math.isnan(b["minX"]) and math.isnan(b["maxX"])

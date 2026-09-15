@@ -53,7 +53,12 @@ def _expand(glyph: Glyph, parts: dict[str, Glyph],
         elif isinstance(op, Ref):
             part = parts.get(op.name)
             if part is None:            # @版本兜底：ref 名带 @N 时回退基名
-                part = parts.get(op.name.partition("@")[0])
+                base = op.name.partition("@")[0]
+                # self@N 历史快照自引用不兜底（T16 全量冒烟：dump 94 例
+                # CycleError 全是 X 引用 X@N——newest-only 语料没有 X@N 行，
+                # 回退到自身即假环；kurgm 精确匹配查不到 → 跳过该 ref）
+                if base != glyph.name:
+                    part = parts.get(base)
             if part is None:
                 warnings.append(f"missing part: {op.name}")
                 continue
@@ -91,12 +96,17 @@ def _expand(glyph: Glyph, parts: dict[str, Glyph],
 
 
 def _box(items) -> dict:
-    """K/kage.ts:266-285：初始 [0,200]，取各 RStroke.get_box() 极值。"""
+    """K/kage.ts:266-285：初始 [0,200]，取各 RStroke.get_box() 极值。
+
+    聚合走 JS Math.min/max 语义（NaN 传染）：部件 stroke box 带NaN（退化
+    stretch 所致）时整个 box 变 NaN → 外层 stretch 全 NaN → 多边形丢弃
+    （T16 闭包冒烟 84 字形 Python min 静默丢 NaN 多画）。"""
+    from .geom2d import js_max, js_min
     min_x = min_y = 200
     max_x = max_y = 0
     for it in items:
         if isinstance(it, RStroke):
             b = it.get_box()
-            min_x = min(min_x, b["minX"]); max_x = max(max_x, b["maxX"])
-            min_y = min(min_y, b["minY"]); max_y = max(max_y, b["maxY"])
+            min_x = js_min(min_x, b["minX"]); max_x = js_max(max_x, b["maxX"])
+            min_y = js_min(min_y, b["minY"]); max_y = js_max(max_y, b["maxY"])
     return {"minX": min_x, "maxX": max_x, "minY": min_y, "maxY": max_y}

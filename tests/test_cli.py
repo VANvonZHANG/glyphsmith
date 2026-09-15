@@ -127,3 +127,79 @@ def test_compare_stroke_count_mismatch_warns(tmp_path):
     assert code == 0
     assert payload["data"]["per_stroke"] == []      # 笔数不等 → 逐笔 diff 跳过
     assert "stroke count mismatch: 1 vs 2; per_stroke skipped" in payload["warnings"]
+
+
+# ── T16：gsr batch（批量渲染子命令）──
+
+def test_batch_writes_svds(tmp_path):
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\n" + "".join(
+        f"glyph g{i}\nstroke line head flat tail flat (10,10)->(100,60)\n\n"
+        for i in range(5)), encoding="utf-8")
+    out = tmp_path / "batch-out"
+    code, payload = _run(["batch", "--corpus", str(p), "--out", str(out),
+                          "--workers", "2"])
+    assert code == 0 and payload["status"] == "ok"
+    assert payload["data"]["rendered"] == 5 and payload["data"]["errors"] == 0
+    assert payload["data"]["outdir"] == str(out)
+    assert len(list(out.glob("*.svg"))) == 5
+
+
+def test_batch_dump_autodetected(tmp_path):
+    # dump_newest_only 格式自动识别（首行含 '|' 且非 gsf/ 头），无需 --dump
+    p = tmp_path / "d.txt"
+    p.write_text(" name | related | data \n"
+                 " g    | u3013   | 1:0:0:10:10:100:60:2:2 \n", encoding="utf-8")
+    out = tmp_path / "o"
+    code, payload = _run(["batch", "--corpus", str(p), "--out", str(out),
+                          "--workers", "1"])
+    assert code == 0 and payload["data"]["rendered"] == 1
+    assert (out / "g.svg").exists()
+
+
+def test_batch_dump_flag_forces_dump_mode(tmp_path):
+    # 首行为空行的 dump（自动识别只看首行 → 误判 GSF → from_gsf 静默空库）；
+    # --dump 显式强制 from_dump。数据行本身必须含 '|'（三列格式）。
+    body = " name | related | data \n g | u3013 | 1:0:0:10:10:100:60:2:2 \n"
+    p = tmp_path / "d.txt"
+    p.write_text("\n" + body, encoding="utf-8")
+    out = tmp_path / "o"
+    code, payload = _run(["batch", "--corpus", str(p), "--out", str(out),
+                          "--workers", "1"])          # 无 --dump：误判 → 空库
+    assert code == 0 and payload["data"]["rendered"] == 0
+    out2 = tmp_path / "o2"
+    code, payload = _run(["batch", "--corpus", str(p), "--out", str(out2),
+                          "--workers", "1", "--dump"])
+    assert code == 0 and payload["data"]["rendered"] == 1
+
+
+def test_batch_negative_workers_exit2(tmp_path):
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (10,10)->(100,60)\n",
+                 encoding="utf-8")
+    code, payload = _run(["batch", "--corpus", str(p), "--out",
+                          str(tmp_path / "o"), "--workers", "0"])
+    assert code == 2 and payload["status"] == "error"
+
+
+def test_batch_unknown_backend_exit2(tmp_path):
+    # 模块头契约：未知 backend → exit 2（而非逐字形 errors=N 跑完）
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (10,10)->(100,60)\n",
+                 encoding="utf-8")
+    code, payload = _run(["batch", "--corpus", str(p), "--out",
+                          str(tmp_path / "o"), "--backend", "no-such-backend"])
+    assert code == 2 and payload["status"] == "error"
+    assert "backend" in payload["data"]["error"]
+
+
+def test_batch_outdir_unwritable_exit2_json(tmp_path):
+    # M2 写盘契约：outdir 路径被文件占用 → exit 2 + JSON 错误而非 traceback
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (10,10)->(100,60)\n",
+                 encoding="utf-8")
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    code, payload = _run(["batch", "--corpus", str(p), "--out",
+                          str(blocker / "sub"), "--workers", "1"])
+    assert code == 2 and payload["status"] == "error"

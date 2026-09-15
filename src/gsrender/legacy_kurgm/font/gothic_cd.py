@@ -178,6 +178,13 @@ def _generate_fatten_curve(x1, y1, sx1, sy1, sx2, sy2, x2, y2,
 
 
 # ── K/polygons.ts:54-84 Polygons.push（铁律 1）──────────────────
+def _floor10(v: float) -> float:
+    """JS Math.floor 直译：NaN/±Inf 原样穿透（Python math.floor 对两者抛
+    ValueError/OverflowError——T16 全量冒烟发现：27 个字形在 NaN 坐标进
+    push 时整字形 err，而 kurgm 的 floor(NaN)=NaN 后由逐点检查丢弃）。"""
+    return math.floor(v) if math.isfinite(v) else v
+
+
 def push_polygon(outline: Outline, points) -> None:
     """kurgm Polygons.push 的直译：本模块（及后续 mincho cd 表）的唯一落栈口。
 
@@ -192,7 +199,7 @@ def push_polygon(outline: Outline, points) -> None:
     """
     if len(points) < 3:
         return
-    pts = [(math.floor(x * 10) / 10, math.floor(y * 10) / 10, off)
+    pts = [(_floor10(x * 10) / 10, _floor10(y * 10) / 10, off)
            for x, y, off in points]
     minx = 200
     maxx = 0
