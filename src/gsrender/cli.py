@@ -59,7 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sp("render", "渲染单个字形（--out svg|png|outline.json）")
     r.add_argument("name")
-    r.add_argument("--backend", default="legacy-kurgm")
+    r.add_argument("--backend", default="legacy-kurgm",
+                   help="legacy-kurgm|pen-minimal|both（both=双后端并渲对比）")
     r.add_argument("--font", default="mincho",
                    help="serif|mincho / sans|gothic（FONT_ALIAS 换算）")
     r.add_argument("--out", default="svg", choices=["svg", "png", "outline.json"])
@@ -97,9 +98,54 @@ def _make_renderer(args):
         _fail(2, str(e))
 
 
+BOTH_BACKENDS = ["legacy-kurgm", "pen-minimal"]   # both 固定渲序，svg_legacy/svg_pen 键序同此
+
+
+def _render_both(args, r):
+    """`--backend both`（终审 I1）：两后端各渲一次并出对比——CLI 层组合，
+    Renderer/协议层不动。svg 内联双键；png/outline.json 落
+    {name}.legacy.*/{name}.pen.* 两个文件（写盘契约与单后端一致：exit 2 + JSON）。"""
+    from gsrender import Renderer
+    from gsrender.compare import rasterize
+    font = FONT_ALIAS.get(args.font)
+    if font is None:
+        _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
+    outs = {key: Renderer(backend=b, font=font).render(r)
+            for b, key in zip(BOTH_BACKENDS, ("legacy", "pen"))}
+    # 两后端各自向 r.warnings 回写同源展开警告 → 去重保序合并
+    seen: set[str] = set()
+    warns = [w for w in r.warnings if not (w in seen or seen.add(w))]
+
+    def _write(out, key: str, ext: str) -> str:
+        path = f"{_safe_filename(args.name)}.{key}.{ext}"
+        try:
+            if ext == "png":
+                rasterize(out).save(path)
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump({"contours": out.contours}, f, ensure_ascii=False)
+        except OSError as e:       # 写盘契约（T14 审查 M2）同款
+            _fail(2, f"cannot write {path}: {e}")
+        return path
+
+    data = {"name": args.name, "backends": list(BOTH_BACKENDS)}
+    if args.out == "svg":
+        data["svg_legacy"] = outs["legacy"].to_svg()
+        data["svg_pen"] = outs["pen"].to_svg()
+    elif args.out == "png":
+        data["paths"] = [_write(outs["legacy"], "legacy", "png"),
+                         _write(outs["pen"], "pen", "png")]
+    else:
+        data["paths"] = [_write(outs["legacy"], "legacy", "outline.json"),
+                         _write(outs["pen"], "pen", "outline.json")]
+    return data, warns
+
+
 def _cmd_render(args, corpus):
     from gsrender.compare import rasterize
     r = corpus.resolve(args.name)
+    if args.backend == "both":         # 终审 I1：双后端并渲出对比
+        return _render_both(args, r)
     out = _make_renderer(args).render(r)
     if args.out == "svg":             # 内联，不落盘
         data = {"name": args.name, "svg": out.to_svg()}
@@ -258,10 +304,15 @@ def main(argv: list[str] | None = None) -> None:
         if args.cmd == "batch":        # batch 自带语料装载（见 _cmd_batch）
             data, warnings = _cmd_batch(args)
         else:
-            corpus = Corpus.from_gsf(args.corpus)
+            # 终审 C1：非 batch 命令同样自动分流 dump 语料（batch 侧 T16 已做，
+            # 此前 dump 路径被 from_gsf 静默装成空库 → 首例 exit 3 误导）
+            corpus = (Corpus.from_dump(args.corpus)
+                      if _looks_like_dump(args.corpus)
+                      else Corpus.from_gsf(args.corpus))
             data, warnings = _HANDLERS[args.cmd](args, corpus)
-    except FileNotFoundError:
-        _fail(2, f"corpus file not found: {args.corpus}",
+    except OSError as e:         # 终审 M6：目录/无权限等 OSError 家族（FileNotFoundError
+                                # 仅其一）统一 exit 2 + JSON，不再 raw traceback
+        _fail(2, f"cannot open corpus {args.corpus}: {e}",
               hints=[{"action": "gsr list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
                       "reason": "用 --corpus 指定语料文件"}])
     except UnknownGlyphError as e:

@@ -47,11 +47,15 @@ stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
 
 | 后端 | 定位 |
 | --- | --- |
-| `legacy-kurgm` | kurgm/kage-engine 忠实移植：golden 矩阵 7614/7614 指纹全等（宋/黑 × 直线/曲线 × 头尾型），真实 dump 1000 例与 Node 原版指纹全等 |
+| `legacy-kurgm` | kurgm/kage-engine 忠实移植：golden 矩阵 7614/7614 指纹全等（宋/黑 × 直线/曲线 × 头尾型），真实 dump 1000 例与 Node 原版指纹全等（白名单缺口字形已透明排除） |
 | `pen-minimal` | 等宽描边骨架预览（Levien 词汇最小子集），验证 Backend 协议的通用性；v2 变宽 pen 后端见 `docs/pen-backend-design.md` |
 
 两者经同一 `Backend` 协议注册（`gsrender.protocol.get_backend`），CLI
-`--backend` 与 `Renderer(backend=...)` 全链路可切换。
+`--backend` 与 `Renderer(backend=...)` 全链路可切换；`gsr render --backend
+both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双键 +
+`data.backends` 列表；`--out png/outline.json` 时落 `{name}.legacy.*` 与
+`{name}.pen.*` 两个文件）。已知偏差（v1 裁剪）：规格 §5.1 的输入形态
+`<名字|gsf文件|'-'>` 与 stdin 输入尚未实现，v1 仅按位置参数收字形名。
 
 ## 测试
 
@@ -78,9 +82,13 @@ stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
 8 workers 15s（ok=166,694 empty=2,055,201 err=0）；closure 16 workers
 142s（ok=2,221,552 empty=343 err=0）。
 
-冒烟抓出并已修复的移植缺口（共 241 字形，204 例与 kurgm Node 指纹全等；
-余 37 例闭包含 101:/102: 白名单缺口行——gsftool 解析侧已知限制，T12
-口径披露排除，gsrender 修复范围外）：
+冒烟抓出并已修复的移植缺口（共 241 字形，204 例与 kurgm Node 指纹全等）：
+
+**全库口径披露（白名单外线种）**：全库约 1,552 字形含白名单外线种行
+（`101:`/`102:`/`103:` 等 a1_opt 变体及非整数坐标行），其中约 888 例渲染
+与 kurgm 有差（这些行被 gsf 解析层降级 RawOp 跳过并发逐行 warning）；
+属 gsftool 解析侧限制，修复已排队 gsftool 仓库。冒烟口径中被排除的
+37 例闭包缺口即属此类。
 
 - `push_polygon`：Python `math.floor(NaN)` 抛异常（27 字形）；
 - self@N 历史快照自引用被 @版本兜底成假环（94 字形）；

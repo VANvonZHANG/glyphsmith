@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+from pathlib import Path
 
 import pytest
 
@@ -202,4 +203,87 @@ def test_batch_outdir_unwritable_exit2_json(tmp_path):
     blocker.write_text("x", encoding="utf-8")
     code, payload = _run(["batch", "--corpus", str(p), "--out",
                           str(blocker / "sub"), "--workers", "1"])
+    assert code == 2 and payload["status"] == "error"
+
+
+# ── 全分支终审修复（C1 dump 自动分流 / I1 both 并渲 / M6 OSError）──
+
+DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
+
+needs_dump = pytest.mark.skipif(not DUMP.exists(), reason="needs real dump")
+
+
+def _dump_head(dst, n=60):
+    with DUMP.open(encoding="utf-8") as src, open(dst, "w", encoding="utf-8") as out:
+        for _ in range(n):
+            line = src.readline()
+            if not line:
+                break
+            out.write(line)
+
+
+def _first_stroke_name(path):
+    """头部第一个数据列以 stroke 行（head 1-8）开头的字形名（u4e2d 等
+    常用字不在 dump 前 60 行；从头部自取，抗 dump 版本漂移）。"""
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            cells = line.split("|")
+            if len(cells) >= 3:
+                name, data = cells[0].strip(), cells[2].strip()
+                if name and name != "name" and data[:1] in "12345678":
+                    return name
+    raise AssertionError("dump 头部无 stroke 字形（版本漂移？）")
+
+
+@needs_dump
+def test_render_auto_detects_dump_corpus(tmp_path):
+    # C1：非 batch 命令直接吃 dump 语料（README 首例形态）。此前一律
+    # from_gsf，dump 静默装出空库 → unknown glyph exit 3 误导。
+    d = tmp_path / "dump.txt"
+    _dump_head(d)
+    code, payload = _run(["render", _first_stroke_name(d), "--corpus", str(d)])
+    assert code == 0 and payload["status"] == "ok"
+    assert payload["data"]["svg"].startswith("<svg")
+
+
+@needs_dump
+def test_list_auto_detects_dump_corpus(tmp_path):
+    # C1 同款分流对 list（检索类命令同样受益）
+    d = tmp_path / "dump.txt"
+    _dump_head(d)
+    code, payload = _run(["list", "--corpus", str(d), "--like", "a*"])
+    assert code == 0 and payload["data"]["count"] > 0
+
+
+def test_render_both_backends_svg(mini):
+    # I1：--backend both 双后端各渲一次，svg 双键 + backends 列表
+    code, payload = _run(["render", "g", "--corpus", str(mini), "--backend", "both"])
+    assert code == 0 and payload["status"] == "ok"
+    assert payload["data"]["svg_legacy"].startswith("<svg")
+    assert payload["data"]["svg_pen"].startswith("<svg")
+    assert payload["data"]["backends"] == ["legacy-kurgm", "pen-minimal"]
+
+
+def test_render_both_backends_png_two_files(mini, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run(["render", "g", "--corpus", str(mini),
+                          "--backend", "both", "--out", "png"])
+    assert code == 0 and payload["status"] == "ok"
+    assert (tmp_path / "g.legacy.png").exists()
+    assert (tmp_path / "g.pen.png").exists()
+
+
+def test_render_both_backends_outline_json_two_files(mini, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run(["render", "g", "--corpus", str(mini),
+                          "--backend", "both", "--out", "outline.json"])
+    assert code == 0
+    assert (tmp_path / "g.legacy.outline.json").exists()
+    assert (tmp_path / "g.pen.outline.json").exists()
+
+
+def test_corpus_path_is_directory_exit2_json(tmp_path):
+    # M6：语料是目录 → IsADirectoryError（OSError 子类、非 FileNotFoundError）
+    # 也走 exit 2 + JSON 契约，而非 raw traceback
+    code, payload = _run(["render", "g", "--corpus", str(tmp_path)])
     assert code == 2 and payload["status"] == "error"
