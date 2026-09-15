@@ -19,17 +19,22 @@ class PenMinimalBackend(Backend):
 
     def render(self, result, opts=None) -> Outline:
         from .legacy_kurgm.expansion import expand
-        o = Outline()
-        for st in expand(result.glyph, result.parts):
+        warnings = list(result.warnings)   # 终审 I2：与 legacy-kurgm.render 同款
+        o = Outline()                      # 回写口径——missing part / raw op 类
+        for st in expand(result.glyph, result.parts, warnings):
             if isinstance(st, tuple):      # TransformOp：预览级跳过
                 continue
             o.contours.extend(self._draw(st).contours)
+        result.warnings[:] = warnings      # 警告不因换后端而悬空静默
         return o
 
     def render_separated(self, result, opts=None) -> list:
         from .legacy_kurgm.expansion import expand
-        return [self._draw(st) for st in expand(result.glyph, result.parts)
+        warnings = list(result.warnings)
+        outs = [self._draw(st) for st in expand(result.glyph, result.parts, warnings)
                 if not isinstance(st, tuple)]
+        result.warnings[:] = warnings
+        return outs
 
     def _draw(self, st) -> Outline:
         o = Outline()

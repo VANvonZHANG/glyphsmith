@@ -85,3 +85,26 @@ def test_transform_op_rows_skipped():
     g = parse_kage2("1:0:0:20:50:180:50$0:99:0:0:0:200:200:rot:0:0")
     out = get_backend("pen-minimal").render(_R(g))
     assert len(out.contours) == 1
+
+
+# ── 终审 I2：warnings 回写与 legacy 对齐 ────────────────────────────
+
+def test_raw_op_warnings_parity_with_legacy():
+    # 含 RawOp 行（101: 等白名单外线种）的字形两后端渲染后 warnings 应一致：
+    # raw op skipped 警告两后端都出现。此前 pen-minimal 不向 expand 传
+    # warnings，换后端后这类警告静默丢失。
+    g = parse_kage2("101:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
+    leg, pen = _R(g), _R(g)
+    LegacyKurgmBackend().render(leg)
+    get_backend("pen-minimal").render(pen)
+    assert leg.warnings, "legacy 应产生 raw op skipped 警告"
+    assert pen.warnings == leg.warnings
+    assert any("raw op skipped" in w for w in pen.warnings)
+
+
+def test_render_separated_writes_back_warnings():
+    # render_separated 同样回写（missing part / raw op 类警告不悬空）
+    g = parse_kage2("101:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
+    r = _R(g)
+    get_backend("pen-minimal").render_separated(r)
+    assert any("raw op skipped" in w for w in r.warnings)
