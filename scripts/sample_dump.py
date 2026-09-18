@@ -1,16 +1,22 @@
-# scripts/sample_dump.py —— 可复现抽样（glyphsmith sample 的雏形）
-"""dump 抽样器 + 残余垃圾行过滤（T12 交叉验证的语料侧）。
+# scripts/sample_dump.py —— reproducible sampling (the prototype of `glyphsmith sample`)
+"""Dump sampler + residual-junk filtering (the corpus side of T12
+cross-validation).
 
-sample(): dump_newest_only.txt → (name, data) 可复现随机样本。
-split_residual_junk(): 把样本按「是否含残余垃圾行」拆成 (clean, excluded)——
-干净侧进指纹对拍，排除侧只做透明披露。
+sample(): dump_newest_only.txt → a reproducible random sample of (name, data).
+split_residual_junk(): split a sample into (clean, excluded) by "contains a
+residual junk row" — the clean side goes into fingerprint differential testing,
+the excluded side is disclosed only.
 
-口径沿革：gsftool `2c5dea2` 之前这里过滤的是「白名单缺口」（字面线种白名单
-{"1","2","3","4","6","7"} 之外的全部整数首列行，含 101/103 等 a1 位域行，
-约 1,514 个字形）。修复后 a1 位域行是合法 Stroke，过滤收窄为真正的残余垃圾行
-——首列可 int 化 ∉ {0,99}、却因笔画字段守卫不满足被我们降级 RawOp 的行
-（全库实测 9 条：999 伪引用 / 116p 坐标笔误 / -1:0:0:0 四列行 / 截断行），
-这类行 kurgm 会当笔画解释、我们跳过，属两侧语义固有差异。
+History of the predicate: before gsftool `2c5dea2` this filtered the "whitelist
+gap" (every row with an integer first column outside the literal stroke-type
+whitelist {"1","2","3","4","6","7"}, including a1-bitfield rows such as 101/103
+— about 1,514 glyphs). After the fix a1-bitfield rows are legal Strokes and the
+filter narrowed to genuine residual junk rows — rows whose first column parses
+as int and is ∉ {0,99} but which the stroke-field guard makes us downgrade to
+RawOp (9 measured across the whole corpus: 999 pseudo-references / 116p
+coordinate typos / -1:0:0:0 four-column rows / truncated rows). kurgm interprets
+such rows as strokes while we skip them; the difference is inherent to the two
+sides' semantics.
 """
 import json
 import random
@@ -22,7 +28,7 @@ from gsf.model import RawOp
 
 
 def sample(dump: Path, n: int, seed: int) -> list:
-    """含笔画（非纯 99 行）字形的可复现随机样本，返回 (name, data)。"""
+    """A reproducible random sample of glyphs with strokes (not pure 99 rows), as (name, data)."""
     rng = random.Random(seed)
     picked = []
     for line in Path(dump).open(encoding="utf-8"):
@@ -44,23 +50,31 @@ def _int_like(s: str) -> bool:
 
 
 def split_residual_junk(cases: list) -> tuple:
-    """按「含残余垃圾行」拆分样本 → (clean, excluded)。
+    """Split a sample by "contains a residual junk row" → (clean, excluded).
 
-    残余垃圾行 = 首列可 int 化 ∉ {0,99}、却在 gsf.kage2 里落成 RawOp 的行
-    （笔画字段守卫不满足）：`2:...:116p` 坐标笔误、`1:0:`/`1:0`/`1` 截断行、
-    `-1:0:0:0` 四列行、`999:...:名字` 伪引用——全库实测 9 条。这类行 kurgm
-    当笔画解释（NaN 坐标）、我们跳过，产生与移植质量无关的假 mismatch。
+    A residual junk row = a row whose first column parses as int and is
+    ∉ {0,99} but which lands as RawOp in gsf.kage2 (the stroke-field guard is
+    not satisfied): the `2:...:116p` coordinate typo, the `1:0:`/`1:0`/`1`
+    truncated rows, the `-1:0:0:0` four-column row, the `999:...:name`
+    pseudo-reference — 9 measured across the whole corpus. kurgm interprets
+    such rows as strokes (with NaN coordinates) while we skip them, producing a
+    false mismatch unrelated to port quality.
 
-    口径沿革（复审修正）：T12 时代此过滤还排除 `0:` 行（保守假设「0 行另有
-    通道、两侧不接」）。该机制陈述已被证伪：`0:` 行两侧同判——kage
-    `kage.ts:205` 对 a1≠99 一律建 Stroke，`0:97/98/99` 由字体层当变换应用
-    （我们侧 `expand` 产 TransformOp、`legacy_kurgm` 的 `_transform_drawer`
-    施加；kurgm 侧桥接同），其余 `0:` 行两侧都是空操作。实测被排除的 10 个
-    字形 0/10 mismatch → 过滤收窄为「9 条已知畸形行」一类，不再排除 `0:` 行。
+    History of the predicate (corrected on review): in the T12 era this filter
+    also excluded `0:` rows (on the conservative assumption that "0 rows take a
+    different channel and the two sides do not meet"). That mechanism has been
+    disproved: the two sides judge `0:` rows alike — kage `kage.ts:205` builds a
+    Stroke for any a1≠99, `0:97/98/99` are applied as a transform by the font
+    layer (our side: `expand` yields a TransformOp, which `legacy_kurgm`'s
+    `_transform_drawer` applies; the kurgm side's bridge does the same), and the
+    remaining `0:` rows are no-ops on both sides. The 10 glyphs that used to be
+    excluded measured 0/10 mismatches → the filter narrowed to the "9 known
+    malformed rows" class and no longer excludes `0:` rows.
 
-    注意：gsftool 2c5dea2 起 a1 位域行（101/103/106/107 等）已是合法
-    Stroke，不再进此过滤（旧口径曾据此排除约 1,514 个字形；专项验收见
-    tests/test_cross_engine.py::test_gap_glyphs_now_match_kurgm）。
+    Note: since gsftool 2c5dea2, a1-bitfield rows (101/103/106/107 etc.) are
+    legal Strokes and no longer enter this filter (the old predicate excluded
+    about 1,514 glyphs on that basis; for the dedicated acceptance see
+    tests/test_cross_engine.py::test_gap_glyphs_now_match_kurgm).
     """
     clean, excluded = [], []
     for case in cases:
@@ -69,14 +83,15 @@ def split_residual_junk(cases: list) -> tuple:
 
 
 def has_residual_junk(data: str) -> bool:
-    """data 是否含残余垃圾行（首列可 int 化 ∉ {0,99} 的 RawOp，两侧解释不同）。"""
+    """Whether data contains a residual junk row (a RawOp whose first column
+    parses as int and is ∉ {0,99}); the two sides interpret it differently."""
     return any(isinstance(op, RawOp) and _int_like(op.cols[0])
                and int(op.cols[0]) not in (0, 99)
                for op in parse_kage2(data).ops)
 
 
 def first_junk_row(data: str) -> str:
-    """首个残余垃圾行（排除例披露用）；无则空串。"""
+    """The first residual junk row (for disclosing excluded cases); empty if none."""
     for op in parse_kage2(data).ops:
         if isinstance(op, RawOp) and _int_like(op.cols[0]) \
                 and int(op.cols[0]) not in (0, 99):

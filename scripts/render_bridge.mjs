@@ -1,9 +1,12 @@
-// scripts/render_bridge.mjs —— stdin 读 JSON 行，stdout 出 TSV: name<TAB>fingerprint
+// scripts/render_bridge.mjs —— read JSON lines on stdin, write TSV: name<TAB>fingerprint
 //
-// 引擎位置按序解析（不硬编码绝对路径；解析规则与 gsftool scripts/render_check.mjs 一致）：
-//   1. 环境变量 KAGE_ENGINE —— kage-engine 的 ESM 入口，即 <kage-engine>/lib/esm/index.js
-//   2. <repo>/node_modules/@kurgm/kage-engine/lib/esm/index.js（npm i @kurgm/kage-engine）
-// 两处都不存在时，stderr 输出 JSON 错误并以退出码 2 结束（stdout 的 TSV 契约保持干净）。
+// The engine location is resolved in order (never hard-coded; the resolution rule
+// matches gsftool scripts/render_check.mjs):
+//   1. the KAGE_ENGINE environment variable — kage-engine's ESM entry, i.e.
+//      <kage-engine>/lib/esm/index.js
+//   2. <repo>/node_modules/@kurgm/kage-engine/lib/esm/index.js (npm i @kurgm/kage-engine)
+// When neither exists, a JSON error goes to stderr and the process exits with code 2
+// (keeping the stdout TSV contract clean).
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";

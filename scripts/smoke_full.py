@@ -1,22 +1,28 @@
 #!/usr/bin/env python
-# scripts/smoke_full.py —— M4 验收：全量 dump 零崩溃 + 非空率（不写 222 万文件）
-"""全量冒烟：渲染 dump 全部字形，只计数 ok/empty/err，不写盘。
+# scripts/smoke_full.py —— M4 acceptance: full dump, zero crashes + non-empty rate
+"""Full smoke: render every glyph in the dump, counting ok/empty/err only, with
+nothing written to disk.
 
-两口径（数字都进报告）：
-- stroke-only（默认）：parts 只含字形自身，ref 行不走闭包——纯 ref 字形
-  必然 empty，度量「渲染器对任意数据不崩溃」；
-- --closure：corpus.resolve(name) 全闭包——度量「每个字形最终轮廓非空」。
+Two scopes (both numbers go into the report):
+- stroke-only (default): parts contain only the glyph itself and ref rows do not
+  go through the closure — a pure-ref glyph is necessarily empty; this measures
+  "the renderer does not crash on arbitrary data";
+- --closure: corpus.resolve(name), the full closure — this measures "every glyph
+  ends up with a non-empty outline".
 
---limit N   只冒烟前 N 个名字（确定性子集，便于快速验证）；
---workers N ≥2 多进程版（每 worker 自建 Corpus，分窗提交内存有界）；
-            计数逻辑与串行版共用同一 _render_chunk，数字必须一致
-            （已用 20000 例 stroke-only / 5000 例 closure 对照）。
+--limit N   smoke only the first N names (a deterministic subset, handy for a
+            quick check);
+--workers N ≥2 runs the multiprocess version (each worker builds its own Corpus;
+            windowed submission keeps memory bounded); the counting logic shares
+            _render_chunk with the serial version and the numbers must agree
+            (checked against 20000 stroke-only / 5000 closure cases).
 
-用法（语料路径不硬编码：GSF_DUMP 环境变量与 --corpus 二选一，都缺则报错退出）：
+Usage (the corpus path is never hard-coded: pick either the GSF_DUMP environment
+variable or --corpus; with neither, the script errors out):
     GSF_DUMP=<dump_newest_only.txt> python scripts/smoke_full.py --limit 20000
     python scripts/smoke_full.py --limit 20000 --workers 8 --corpus <dump>
     python scripts/smoke_full.py --limit 5000 --closure --workers 8 --corpus <dump>
-    python scripts/smoke_full.py --corpus <dump>          # 全量 222 万（约 2 分钟）
+    python scripts/smoke_full.py --corpus <dump>          # the full 2.22M (about 2 minutes)
     python scripts/smoke_full.py --closure --workers 16 --corpus <dump>
 """
 from __future__ import annotations
@@ -30,12 +36,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-DUMP = os.environ.get("GSF_DUMP", "").strip()   # 缺省语料：环境变量（不硬编码绝对路径）
-PROGRESS_EVERY = 200_000        # stderr 进度粒度
-CHUNK = 500                     # 每 worker 任务的名字数
-WINDOW_FACTOR = 4               # 在途窗口 = workers × WINDOW_FACTOR 个 chunk
+# default corpus: the environment variable (no hard-coded absolute path)
+DUMP = os.environ.get("GSF_DUMP", "").strip()
+PROGRESS_EVERY = 200_000        # stderr progress granularity
+CHUNK = 500                     # names per worker task
+WINDOW_FACTOR = 4               # in-flight window = workers × WINDOW_FACTOR chunks
 
-_STATE: dict = {}               # worker initializer 填充（串行版在主进程填充）
+# filled by the worker initializer (the serial version fills it in the main process)
+_STATE: dict = {}
 
 
 def _init_worker(dump, backend_name, closure):
@@ -46,7 +54,7 @@ def _init_worker(dump, backend_name, closure):
     from glyphsmith.protocol import get_backend
 
     mod = _BACKEND_MODULES.get(backend_name)
-    if mod is not None:                 # 未知名留给 get_backend 报 ValueError
+    if mod is not None:                 # unknown names are left to get_backend's ValueError
         import_module(mod)
     _STATE["corpus"] = Corpus.from_dump(dump)
     _STATE["backend"] = get_backend(backend_name)
@@ -54,7 +62,7 @@ def _init_worker(dump, backend_name, closure):
 
 
 def _render_chunk(names):
-    """计数一个名字块 → (ok, empty, err, 样例错误)。串行/多进程共用。"""
+    """Count one block of names → (ok, empty, err, error samples). Serial/multiprocess shared."""
     from gsf.kage2 import parse_kage2
     from glyphsmith.corpus import ResolveResult
 
@@ -65,14 +73,14 @@ def _render_chunk(names):
         try:
             if _STATE["closure"]:
                 out = backend.render(corpus.resolve(name))
-            else:                       # stroke-only 口径：parts 只有自身
+            else:                       # stroke-only scope: parts are only itself
                 g = parse_kage2(corpus._data[name], name)
                 out = backend.render(ResolveResult(name, g, {name: g}, []))
             if out.contours:
                 ok += 1
             else:
                 empty += 1
-        except Exception as e:          # 冒烟口径：记录不中断
+        except Exception as e:          # smoke convention: record, do not abort
             err += 1
             if len(errors) < 3:
                 errors.append(f"{name}: {type(e).__name__}: {e}")
@@ -81,16 +89,16 @@ def _render_chunk(names):
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="GSF 渲染器全量冒烟（零崩溃 + 非空率，不写盘）")
+        description="GSF renderer full smoke (zero crashes + non-empty rate, no writes)")
     ap.add_argument("--corpus", default=DUMP,
-                    help="dump_newest_only.txt 路径（缺省取 GSF_DUMP 环境变量）")
+                    help="path to dump_newest_only.txt (defaults to the GSF_DUMP env var)")
     ap.add_argument("--backend", default="legacy-kurgm")
     ap.add_argument("--closure", action="store_true",
-                    help="全闭包口径（默认 stroke-only）")
+                    help="full-closure scope (default stroke-only)")
     ap.add_argument("--limit", type=int, default=None,
-                    help="只冒烟前 N 个名字（默认全量）")
+                    help="first N names only (default: all)")
     ap.add_argument("--workers", type=int, default=1,
-                    help="≥2 启用多进程版")
+                    help="≥2 enables the multiprocess version")
     a = ap.parse_args()
     if not a.corpus:
         sys.exit("error: no corpus given\n"
@@ -107,8 +115,9 @@ def main() -> None:
           f"limit={a.limit if a.limit is not None else 'all'}",
           file=sys.stderr)
 
-    # 名字清单：主进程自建 corpus（worker 另建各自的，init 各 1 次）。
-    # 配置错误（未知后端/文件缺失）在此干净退出，不留 raw traceback。
+    # Name list: the main process builds its own corpus (workers build their
+    # own, one init each). Configuration errors (unknown backend / missing file)
+    # exit cleanly here, leaving no raw traceback.
     try:
         _init_worker(a.corpus, a.backend, a.closure)
     except (ValueError, FileNotFoundError) as e:
@@ -146,7 +155,7 @@ def main() -> None:
         with ProcessPoolExecutor(max_workers=a.workers,
                                  initializer=_init_worker,
                                  initargs=(a.corpus, a.backend, a.closure)) as ex:
-            while True:                  # 分窗提交：在途任务有界
+            while True:                  # windowed submission: bounded in-flight tasks
                 window = list(islice(it, a.workers * WINDOW_FACTOR))
                 if not window:
                     break

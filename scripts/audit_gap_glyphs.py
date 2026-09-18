@@ -1,24 +1,33 @@
-# scripts/audit_gap_glyphs.py —— 白名单缺口修复的全量验收审计（gsftool 2c5dea2 下游）
-"""对拍「旧缺口字形」：修复前被 gsf 白名单静默跳过、kurgm 照画的字形。
+# scripts/audit_gap_glyphs.py —— full acceptance audit of the whitelist-gap fix
+"""Differential audit of "old gap glyphs": glyphs the gsf whitelist silently
+skipped before the fix while kurgm drew them.
 
-背景：gsftool `2c5dea2` 之前 `_parse_row` 用字面白名单 {"1","2","3","4","6","7"}，
-a1 位域行（`101:`/`102:`/`103:`/`106:`/`107:` 等）与畸形首列行被降级为 RawOp——
-渲染层跳过 → 与 kurgm 笔画数不同，产生与移植质量无关的假 mismatch。
-修复后这些行是合法 Stroke/Ref，两侧应当趋同。
+Background: before gsftool `2c5dea2`, `_parse_row` used the literal whitelist
+{"1","2","3","4","6","7"}, so a1-bitfield rows (`101:`/`102:`/`103:`/`106:`/
+`107:` etc.) and malformed first-column rows were downgraded to RawOp — the
+render layer skipped them, giving a different stroke count from kurgm and a
+false mismatch unrelated to port quality. After the fix these rows are legal
+Stroke/Ref and the two sides should converge.
 
-本脚本：
-  1. 扫 dump，挑出「旧缺口字形」——含至少一条 pre-2c5dea2 会被降级为 RawOp、
-     而 kurgm 会解释的行（`old_gap_row`，即旧 `has_whitelist_gap` 口径）；
-  2. 逐字形 Python 侧指纹（parse_kage2 + expand + MinchoFont + fingerprint，
-     口径同 tests/test_cross_engine.py）vs Node 桥 kurgm 指纹；
-  3. 输出 total / match / mismatch；mismatch 打印字形名与首个缺口行。
+This script:
+  1. scans the dump for "old gap glyphs" — glyphs containing at least one row
+     that pre-2c5dea2 would have downgraded to RawOp while kurgm interprets it
+     (`old_gap_row`, i.e. the old `has_whitelist_gap` predicate);
+  2. fingerprints each glyph on the Python side (parse_kage2 + expand +
+     MinchoFont + fingerprint, same parameters as tests/test_cross_engine.py)
+     against the Node-bridge kurgm fingerprint;
+  3. prints total / match / mismatch; for a mismatch it prints the glyph name
+     and the first gap row.
 
-残余白名单 `KNOWN_RESIDUAL_GLYPHS`：gsftool 侧守卫失败、两侧语义本就不同的
-9 条畸形行（999 伪引用 / 116p 坐标笔误 / 四列行 / 截断行）。白名单是披露性的，
-不用于掩盖新 mismatch——tests/test_cross_engine.py::test_gap_glyphs_now_match_kurgm
-断言残差必须逐条对上这些已知行。
+The residual whitelist `KNOWN_RESIDUAL_GLYPHS`: 9 malformed rows where the
+gsftool-side guard fails and the two sides differ by nature (999
+pseudo-references / 116p coordinate typos / four-column rows / truncated rows).
+The whitelist is disclosure, not a way to hide new mismatches —
+tests/test_cross_engine.py::test_gap_glyphs_now_match_kurgm asserts that the
+residuals must match these known rows one by one.
 
-CLI（语料路径不硬编码：GSF_DUMP 环境变量与 --dump 二选一，都缺则退出码 2）:
+CLI (the corpus path is never hard-coded: pick either the GSF_DUMP environment
+variable or --dump; with neither, exit code 2):
   GSF_DUMP=<dump_newest_only.txt> python scripts/audit_gap_glyphs.py [--limit N]
                                      [--workers N] [--seed S] [--sample N] [--baseline]
   python scripts/audit_gap_glyphs.py --dump <dump_newest_only.txt> ...
@@ -36,14 +45,17 @@ from multiprocessing import Pool
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DUMP = os.environ.get("GSF_DUMP", "").strip()   # 缺省语料：环境变量（不硬编码绝对路径）
+# default corpus: the environment variable (no hard-coded absolute path)
+DEFAULT_DUMP = os.environ.get("GSF_DUMP", "").strip()
 BRIDGE = ROOT / "scripts" / "render_bridge.mjs"
 
-# gsftool 2c5dea2 之前的线种字面白名单（仅用于识别受影响字形集，勿用于解析）
+# the literal stroke-type whitelist from before gsftool 2c5dea2 (used only to
+# identify the affected glyph set, never for parsing)
 OLD_STROKE_TYPES = frozenset({"1", "2", "3", "4", "6", "7"})
 
-# 已知残差：gsftool 侧 9 条守卫失败行（两侧都不解释，故指纹仍应相等；
-# 若真 mismatch 则只允许出现在这里）。值=该字形用于披露的缺口行。
+# Known residuals: 9 rows where the gsftool-side guard fails (neither side
+# interprets them, so the fingerprints should still be equal; a genuine mismatch
+# is allowed to appear only here). Value = the gap row disclosed for that glyph.
 KNOWN_RESIDUAL_GLYPHS = {
     "hkcs_m38fa-p04-s01": "999:0:0:0:0:200:200:hkcs_m38fa-p04-s01@2",
     "hkcs_m5343-p03-s00": "999:0:0:0:0:200:260:hkcs_m5343-p03-s00",
@@ -65,10 +77,13 @@ def _ints(fields):
 
 
 def old_gap_row(cols: tuple) -> bool:
-    """该行在 gsftool 2c5dea2 之前是否被降级为 RawOp（旧 has_whitelist_gap 口径）。
+    """Whether this row was downgraded to RawOp before gsftool 2c5dea2 (the old
+    has_whitelist_gap predicate).
 
-    只算「首列可 int 化且 ∉ {0,99}」的行——首列 int 失败的真垃圾行（`-:`）
-    修复前后都是 RawOp，不是本次缺口；0 行是变换/空操作行，另走通道。
+    Only rows whose first column parses as int and is ∉ {0,99} count — genuinely
+    junk rows whose first column fails int (`-:`) are RawOp both before and after
+    the fix and are not this gap; 0 rows are transform/no-op rows and take a
+    separate channel.
     """
     try:
         a1 = int(cols[0])
@@ -80,18 +95,19 @@ def old_gap_row(cols: tuple) -> bool:
         flat = _ints(cols[3:])
         if (_ints(cols[0:3]) is not None and flat is not None
                 and len(flat) % 2 == 0 and len(flat) >= 4):
-            return False            # 旧解析器也认的普通笔画（1/2/3/4/6/7）
+            return False            # ordinary stroke the old parser accepted too
     return True
 
 
 def gap_rows(data: str) -> list:
-    """data 里的全部「旧缺口行」（修复前被跳过、kurgm 会解释的行）。"""
+    """Every "old gap row" in data (skipped before the fix, interpreted by kurgm)."""
     return [":".join(row.split(":")) for row in data.split("$")
             if old_gap_row(tuple(row.split(":")))]
 
 
 def iter_gap_glyphs(dump) -> list:
-    """扫 dump，返回含至少一条旧缺口行的 (name, data)（dump 顺序，可复现）。"""
+    """Scan the dump, returning every (name, data) with at least one old gap row
+    (dump order, reproducible)."""
     out = []
     with Path(dump).open(encoding="utf-8") as f:
         for line in f:
@@ -105,22 +121,25 @@ def iter_gap_glyphs(dump) -> list:
 
 
 def sample_cases(cases: list, n: int, seed: int) -> list:
-    """固定种子抽样（不改变 dump 顺序语义的调用方可直接用切片）。"""
+    """Fixed-seed sampling (callers that need dump order can just slice instead)."""
     rng = random.Random(seed)
     return rng.sample(cases, min(n, len(cases)))
 
 
 def strip_gap_rows(data: str) -> str:
-    """剔除旧缺口行 → 等价于 pre-2c5dea2 渲染（那些行降级 RawOp 被 expand 跳过）。
+    """Drop the old gap rows → equivalent to pre-2c5dea2 rendering (those rows
+    were downgraded to RawOp and skipped by expand).
 
-    用于复现修复前基线：删行与「解析成 RawOp 后跳过」几何等价。
+    Used to reproduce the pre-fix baseline: deleting a row and "parsing it as
+    RawOp and skipping it" are geometrically equivalent.
     """
     return "$".join(row for row in data.split("$")
                     if not old_gap_row(tuple(row.split(":"))))
 
 
 def py_fingerprint(data: str, *, baseline: bool = False) -> str:
-    """Python 侧指纹（口径同 tests/test_cross_engine.py：Mincho + kUseCurve=False）。"""
+    """Python-side fingerprint (as in tests/test_cross_engine.py: Mincho,
+    kUseCurve=False)."""
     from gsf.kage2 import parse_kage2
 
     if baseline:
@@ -133,7 +152,7 @@ def py_fingerprint(data: str, *, baseline: bool = False) -> str:
 
     g = parse_kage2(data)
     font = select_font(Shotai.K_MINCHO)
-    font.k_use_curve = False       # 属性通道；直写 params.kUseCurve 无效（T7 坑）
+    font.k_use_curve = False       # property channel; params.kUseCurve is a no-op (T7)
     o = Outline()
     for d in font.get_drawers(expand(g, {g.name: g})):
         d(o)
@@ -141,21 +160,22 @@ def py_fingerprint(data: str, *, baseline: bool = False) -> str:
 
 
 def _py_one(case) -> tuple:
-    """worker：单字形 Python 指纹；异常转 'ERROR:类名'（不算崩溃）。"""
+    """worker: Python fingerprint of one glyph; an exception becomes
+    'ERROR:<class>' (not a crash)."""
     name, data, baseline = case
     try:
         return name, py_fingerprint(data, baseline=baseline)
-    except Exception as e:                     # noqa: BLE001 —— 审计须落数据不落堆栈
+    except Exception as e:                     # noqa: BLE001 — log data, not a stack
         return name, f"ERROR:{type(e).__name__}"
 
 
 def kurgm_fingerprints(cases: list, node: str = None) -> dict:
-    """Node 桥批量指纹：stdin JSON 行 → stdout TSV name<TAB>fp。"""
+    """Batch fingerprints via the Node bridge: stdin JSON lines → stdout TSV name<TAB>fp."""
     if not cases:
         return {}
     node = node or shutil.which("node")
     if not node:
-        raise RuntimeError("node not found（对拍需要 kurgm 桥）")
+        raise RuntimeError("node not found (kurgm bridge needed for diff testing)")
     payload = "\n".join(json.dumps({"name": n, "data": d}) for n, d in cases)
     proc = subprocess.run([node, str(BRIDGE)], input=payload,
                           capture_output=True, text=True, check=True)
@@ -164,11 +184,14 @@ def kurgm_fingerprints(cases: list, node: str = None) -> dict:
 
 def audit(cases: list, *, workers: int = 1, node: str = None,
           baseline: bool = False) -> dict:
-    """对拍 cases（(name, data) 列表）→ {"total","match","mismatch":[...]}。
+    """Differential-test cases (a list of (name, data)) →
+    {"total","match","mismatch":[...]}.
 
-    mismatch 条目：{"name", "ours", "kurgm", "gap_row"}；判据同 test_cross_engine：
-    我们异常/kurgm ERROR/指纹不等均记 mismatch。
-    baseline=True 时 Python 侧剔除旧缺口行，复现 pre-2c5dea2 的假 mismatch 数。
+    A mismatch entry is {"name", "ours", "kurgm", "gap_row"}; the criteria match
+    test_cross_engine: our exception / kurgm ERROR / unequal fingerprints all
+    count as a mismatch.
+    With baseline=True the Python side drops the old gap rows, reproducing the
+    pre-2c5dea2 false-mismatch count.
     """
     work = [(n, d, baseline) for n, d in cases]
     kf = kurgm_fingerprints(cases, node=node)
@@ -189,15 +212,15 @@ def audit(cases: list, *, workers: int = 1, node: str = None,
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="gsftool 2c5dea2 缺口修复的全量验收审计")
+    ap = argparse.ArgumentParser(description="full acceptance audit of the gsftool 2c5dea2 gap fix")
     ap.add_argument("--dump", default=DEFAULT_DUMP,
-                    help="dump_newest_only.txt 路径（缺省取 GSF_DUMP 环境变量）")
-    ap.add_argument("--limit", type=int, default=None, help="只取前 N 例（快速验证）")
-    ap.add_argument("--sample", type=int, default=None, help="固定种子抽样 N 例")
+                    help="path to dump_newest_only.txt (defaults to the GSF_DUMP env var)")
+    ap.add_argument("--limit", type=int, default=None, help="first N cases only (quick check)")
+    ap.add_argument("--sample", type=int, default=None, help="fixed-seed sample of N cases")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--baseline", action="store_true",
-                    help="剔除旧缺口行复现 pre-2c5dea2 的假 mismatch 基线")
+                    help="drop old gap rows to reproduce the pre-2c5dea2 baseline")
     a = ap.parse_args(argv)
 
     if not a.dump:
@@ -218,7 +241,7 @@ def main(argv=None) -> int:
           f"workers={a.workers} baseline={'on' if a.baseline else 'off'}")
     print(f"[audit] total={r['total']} match={r['match']} mismatch={len(r['mismatch'])}")
     if a.baseline:
-        print(f"[audit] baseline（剔除旧缺口行 = pre-2c5dea2 渲染）："
+        print(f"[audit] baseline (old gap rows dropped = pre-2c5dea2 rendering): "
               f"{len(r['mismatch'])}/{r['total']} NEQ")
         for m in r["mismatch"][:10]:
             print(f"[audit]   NEQ {m['name']}: ours={m['ours']} kurgm={m['kurgm']} "
@@ -230,7 +253,7 @@ def main(argv=None) -> int:
         print(f"[audit]   {tag} {m['name']}: ours={m['ours']} kurgm={m['kurgm']} "
               f"first_gap_row={m['gap_row']!r}")
     if not r["mismatch"]:
-        print("[audit] 全等：缺口修复零残差（kurgm 照画的字形我们照画）")
+        print("[audit] all equal: the gap fix leaves zero residuals (we draw what kurgm draws)")
     return 0 if all(m["name"] in KNOWN_RESIDUAL_GLYPHS for m in r["mismatch"]) else 1
 
 
