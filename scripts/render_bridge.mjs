@@ -1,7 +1,33 @@
 // scripts/render_bridge.mjs —— stdin 读 JSON 行，stdout 出 TSV: name<TAB>fingerprint
+//
+// 引擎位置按序解析（不硬编码绝对路径；解析规则与 gsftool scripts/render_check.mjs 一致）：
+//   1. 环境变量 KAGE_ENGINE —— kage-engine 的 ESM 入口，即 <kage-engine>/lib/esm/index.js
+//   2. <repo>/node_modules/@kurgm/kage-engine/lib/esm/index.js（npm i @kurgm/kage-engine）
+// 两处都不存在时，stderr 输出 JSON 错误并以退出码 2 结束（stdout 的 TSV 契约保持干净）。
 import { createHash } from "node:crypto";
-import { Kage, Polygons, KShotai } from "/home/zhangfan/Project/20260909_KAGE/repos/kage-engine/lib/esm/index.js";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import * as readline from "node:readline";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ENGINE_CANDIDATES = [
+  process.env.KAGE_ENGINE,
+  resolve(HERE, "..", "node_modules", "@kurgm", "kage-engine", "lib", "esm", "index.js"),
+].filter((p) => typeof p === "string" && p !== "");
+const engine = ENGINE_CANDIDATES.find((p) => existsSync(p));
+
+if (!engine) {
+  console.error(JSON.stringify({
+    error: "kage-engine not found",
+    tried: ENGINE_CANDIDATES,
+    hint: "set KAGE_ENGINE=<kage-engine>/lib/esm/index.js, or run "
+        + "`npm install @kurgm/kage-engine` in the repository root",
+  }, null, 2));
+  process.exit(2);
+}
+
+const { Kage, Polygons, KShotai } = await import(pathToFileURL(engine).href);
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on("line", (line) => {

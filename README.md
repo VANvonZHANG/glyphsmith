@@ -59,9 +59,15 @@ both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双�
 
 ## 测试
 
-    pytest                    # 全套（含 golden + cross，本机需 node + dump）
+    pytest                    # 全套（含 golden + cross）
     pytest -m golden          # 只跑 golden 矩阵（7614 例，kurgm 逐指纹对拍）
     pytest -m "not cross"     # 跳过需要 node/dump 的交叉对拍
+
+外部资源（318MB 的真实 dump、kage-engine）不随仓库分发，也不硬编码路径，
+经环境变量传入；未设或不存在时相关用例**跳过而非失败**：
+
+    GSF_DUMP=<dump>/dump_newest_only.txt pytest -q         # 真实 dump 用例
+    KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q   # kurgm 交叉对拍（另需 node）
 
 ## 全量冒烟（M4 口径）
 
@@ -74,9 +80,11 @@ both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双�
   字形必然 empty，度量「渲染器对任意数据不崩溃」；
 - `--closure`：`corpus.resolve(name)` 全闭包——度量「每个字形最终轮廓非空」。
 
-    python scripts/smoke_full.py --limit 20000          # 确定性子集
-    python scripts/smoke_full.py --workers 16           # 多进程版（数字与串行一致）
-    python scripts/smoke_full.py --closure --workers 16 # 全闭包口径全量
+语料路径同样经 `GSF_DUMP` 或 `--corpus PATH` 传入（都缺则报错退出）：
+
+    GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000   # 确定性子集
+    GSF_DUMP=<dump> python scripts/smoke_full.py --workers 16    # 多进程版（数字与串行一致）
+    GSF_DUMP=<dump> python scripts/smoke_full.py --closure --workers 16  # 全闭包口径全量
 
 全量基准（2,221,895 字形，legacy-kurgm/mincho）：stroke-only 串行 73s /
 8 workers 15s（ok=166,694 empty=2,055,201 err=0）；closure 16 workers

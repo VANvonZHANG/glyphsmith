@@ -1,6 +1,7 @@
 # tests/test_corpus_expansion.py
 """T5：Corpus 流式装载 + resolve 闭包 + ref 展开（affine/stretch/TransformOp）。"""
 import itertools
+import os
 import textwrap
 from pathlib import Path
 
@@ -9,7 +10,10 @@ import pytest
 from glyphsmith.corpus import Corpus, UnknownGlyphError
 from glyphsmith.legacy_kurgm.expansion import CycleError, TransformOp, expand
 
-REAL_DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
+# 真实 dump 是外部数据集，不随仓库分发也不硬编码路径：GSF_DUMP 未设/不存在则
+# 跳过（而非失败）用到它的用例。
+GSF_DUMP = os.environ.get("GSF_DUMP", "").strip()
+REAL_DUMP = Path(GSF_DUMP) if GSF_DUMP else None
 
 GSF_CORPUS = textwrap.dedent("""\
     gsf/1
@@ -220,7 +224,8 @@ def test_glyph_cache_bounded(tmp_path):
         assert len(c._cache) <= 3
 
 
-@pytest.mark.skipif(not REAL_DUMP.exists(), reason="真实 dump 不在本机")
+@pytest.mark.skipif(REAL_DUMP is None or not REAL_DUMP.is_file(),
+                    reason="GSF_DUMP 未指向真实 dump（跳过而非失败）")
 def test_from_dump_real_sample(tmp_path):
     # 只取真实文件前 50 行（318MB 全量不入测试），校验行格式兼容与可解析性。
     with REAL_DUMP.open(encoding="utf-8") as f:

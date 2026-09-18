@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -208,9 +209,12 @@ def test_batch_outdir_unwritable_exit2_json(tmp_path):
 
 # ── 全分支终审修复（C1 dump 自动分流 / I1 both 并渲 / M6 OSError）──
 
-DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
+# 真实 dump 是外部数据集：GSF_DUMP 未设/不存在时跳过（而非失败）相关用例。
+GSF_DUMP = os.environ.get("GSF_DUMP", "").strip()
+DUMP = Path(GSF_DUMP) if GSF_DUMP else None
 
-needs_dump = pytest.mark.skipif(not DUMP.exists(), reason="needs real dump")
+needs_dump = pytest.mark.skipif(DUMP is None or not DUMP.is_file(),
+                                reason="GSF_DUMP 未指向真实 dump（跳过而非失败）")
 
 
 def _dump_head(dst, n=60):

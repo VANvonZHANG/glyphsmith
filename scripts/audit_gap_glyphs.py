@@ -18,14 +18,16 @@ a1 位域行（`101:`/`102:`/`103:`/`106:`/`107:` 等）与畸形首列行被降
 不用于掩盖新 mismatch——tests/test_cross_engine.py::test_gap_glyphs_now_match_kurgm
 断言残差必须逐条对上这些已知行。
 
-CLI:
-  python scripts/audit_gap_glyphs.py [--dump PATH] [--limit N] [--workers N]
-                                     [--seed S] [--sample N] [--baseline]
+CLI（语料路径不硬编码：GSF_DUMP 环境变量与 --dump 二选一，都缺则退出码 2）:
+  GSF_DUMP=<dump_newest_only.txt> python scripts/audit_gap_glyphs.py [--limit N]
+                                     [--workers N] [--seed S] [--sample N] [--baseline]
+  python scripts/audit_gap_glyphs.py --dump <dump_newest_only.txt> ...
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -34,7 +36,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
+DEFAULT_DUMP = os.environ.get("GSF_DUMP", "").strip()   # 缺省语料：环境变量（不硬编码绝对路径）
 BRIDGE = ROOT / "scripts" / "render_bridge.mjs"
 
 # gsftool 2c5dea2 之前的线种字面白名单（仅用于识别受影响字形集，勿用于解析）
@@ -188,7 +190,8 @@ def audit(cases: list, *, workers: int = 1, node: str = None,
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="gsftool 2c5dea2 缺口修复的全量验收审计")
-    ap.add_argument("--dump", default=str(DEFAULT_DUMP))
+    ap.add_argument("--dump", default=DEFAULT_DUMP,
+                    help="dump_newest_only.txt 路径（缺省取 GSF_DUMP 环境变量）")
     ap.add_argument("--limit", type=int, default=None, help="只取前 N 例（快速验证）")
     ap.add_argument("--sample", type=int, default=None, help="固定种子抽样 N 例")
     ap.add_argument("--seed", type=int, default=1)
@@ -197,6 +200,10 @@ def main(argv=None) -> int:
                     help="剔除旧缺口行复现 pre-2c5dea2 的假 mismatch 基线")
     a = ap.parse_args(argv)
 
+    if not a.dump:
+        print("[audit] no dump given: set GSF_DUMP=<dump_newest_only.txt> "
+              "or pass --dump PATH", file=sys.stderr)
+        return 2
     if not Path(a.dump).exists():
         print(f"[audit] dump not found: {a.dump}", file=sys.stderr)
         return 2

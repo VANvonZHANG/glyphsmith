@@ -1,6 +1,6 @@
 # pen 后端设计（v2 预留，v1 锁接口）
 
-> 摘自父仓库设计文档 §4.2（`/home/zhangfan/Project/20260909_KAGE/docs/superpowers/specs/2026-09-14-glyphsmith-design.md`）。
+> 摘自父研究仓库的设计规格 §4.2（该设计文档不随本仓分发）。
 > v1 的交付物只有 pen-minimal 预览后端（`src/glyphsmith/pen_minimal.py`：等宽
 > 描边 + butt 端帽，逐段四边形，nonzero 并集即 Levien「弱正确」级）——它证明
 > Backend 协议不是 legacy 专属形状；graph/style/nib 三模块与风格文件引擎

@@ -8,6 +8,7 @@ Stroke，不再落入该过滤（见 test_gap_glyphs_now_match_kurgm 的专项�
 排除数量与例子只在 summary 披露，不参与断言。
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -22,11 +23,22 @@ from glyphsmith.legacy_kurgm.font import Shotai, select_font
 from glyphsmith.outline import Outline
 
 ROOT = Path(__file__).resolve().parent.parent
-DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
+# 外部数据/引擎都不硬编码：dump 走 GSF_DUMP，引擎解析规则同
+# scripts/render_bridge.mjs（KAGE_ENGINE 优先，其次 node_modules 安装）。
+# 缺任一则整模块跳过（外部数据缺失不得让测试失败）。
+GSF_DUMP = os.environ.get("GSF_DUMP", "").strip()
+DUMP = Path(GSF_DUMP) if GSF_DUMP else None
 NODE = shutil.which("node")
+ENGINE_CANDIDATES = [os.environ.get("KAGE_ENGINE"),
+                     str(ROOT / "node_modules" / "@kurgm" / "kage-engine"
+                         / "lib" / "esm" / "index.js")]
+ENGINE = next((p for p in ENGINE_CANDIDATES if p and Path(p).is_file()), None)
+BRIDGE_ENV = {**os.environ, "KAGE_ENGINE": str(ENGINE)} if ENGINE else dict(os.environ)
 pytestmark = [pytest.mark.cross,
-              pytest.mark.skipif(not DUMP.exists() or not NODE,
-                                 reason="needs dump + node")]
+              pytest.mark.skipif(
+                  DUMP is None or not DUMP.is_file() or not NODE or not ENGINE,
+                  reason="needs GSF_DUMP + node + kage-engine "
+                         "(set KAGE_ENGINE=<kage-engine>/lib/esm/index.js)")]
 
 POOL = 1300    # 抽样池（> 1000：残余垃圾行过滤后仍须余足 1000 个对拍字形）
 SAMPLE = 1000  # M2 判据：1000 个字形指纹全等
@@ -44,7 +56,8 @@ def test_sampled_1000_match():
     payload = "\n".join(json.dumps({"name": n, "data": d}) for n, d in cases)
     proc = subprocess.run(
         [NODE, str(ROOT / "scripts" / "render_bridge.mjs")],
-        input=payload, capture_output=True, text=True, check=True)
+        input=payload, capture_output=True, text=True, check=True,
+        env=BRIDGE_ENV)
     kurgm_fp = dict(line.split("\t") for line in proc.stdout.splitlines())
     mismatch = []
     for name, data in cases:
@@ -144,7 +157,8 @@ def test_nan_floor_glyphs_match_kurgm():
                         for n in NAN_FLOOR_GLYPHS)
     proc = subprocess.run(
         [NODE, str(ROOT / "scripts" / "render_bridge.mjs")],
-        input=payload, capture_output=True, text=True, check=True)
+        input=payload, capture_output=True, text=True, check=True,
+        env=BRIDGE_ENV)
     kurgm_fp = dict(line.split("\t") for line in proc.stdout.splitlines())
     mismatch = []
     for name in NAN_FLOOR_GLYPHS:
@@ -225,7 +239,8 @@ def test_self_snapshot_glyphs_match_kurgm():
                         for n in cases)
     proc = subprocess.run(
         [NODE, str(ROOT / "scripts" / "render_bridge.mjs")],
-        input=payload, capture_output=True, text=True, check=True)
+        input=payload, capture_output=True, text=True, check=True,
+        env=BRIDGE_ENV)
     kurgm_fp = dict(line.split("\t") for line in proc.stdout.splitlines())
     mismatch = []
     for name in cases:
@@ -321,7 +336,8 @@ def test_closure_zerodiv_glyphs_match_kurgm():
                                  "buhin": _closure_buhin(corpus, n)}))
     proc = subprocess.run(
         [NODE, str(ROOT / "scripts" / "render_bridge.mjs")],
-        input="\n".join(lines), capture_output=True, text=True, check=True)
+        input="\n".join(lines), capture_output=True, text=True, check=True,
+        env=BRIDGE_ENV)
     kurgm_fp = dict(line.split("\t") for line in proc.stdout.splitlines())
     mismatch = []
     for n in cases:

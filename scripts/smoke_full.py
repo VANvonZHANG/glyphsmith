@@ -12,16 +12,17 @@
             计数逻辑与串行版共用同一 _render_chunk，数字必须一致
             （已用 20000 例 stroke-only / 5000 例 closure 对照）。
 
-用法：
-    python scripts/smoke_full.py --limit 20000
-    python scripts/smoke_full.py --limit 20000 --workers 8
-    python scripts/smoke_full.py --limit 5000 --closure --workers 8
-    python scripts/smoke_full.py                     # 全量 222 万（约 2 分钟）
-    python scripts/smoke_full.py --closure --workers 16   # 全闭包全量
+用法（语料路径不硬编码：GSF_DUMP 环境变量与 --corpus 二选一，都缺则报错退出）：
+    GSF_DUMP=<dump_newest_only.txt> python scripts/smoke_full.py --limit 20000
+    python scripts/smoke_full.py --limit 20000 --workers 8 --corpus <dump>
+    python scripts/smoke_full.py --limit 5000 --closure --workers 8 --corpus <dump>
+    python scripts/smoke_full.py --corpus <dump>          # 全量 222 万（约 2 分钟）
+    python scripts/smoke_full.py --closure --workers 16 --corpus <dump>
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from itertools import islice
@@ -29,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
+DUMP = os.environ.get("GSF_DUMP", "").strip()   # 缺省语料：环境变量（不硬编码绝对路径）
 PROGRESS_EVERY = 200_000        # stderr 进度粒度
 CHUNK = 500                     # 每 worker 任务的名字数
 WINDOW_FACTOR = 4               # 在途窗口 = workers × WINDOW_FACTOR 个 chunk
@@ -81,8 +82,8 @@ def _render_chunk(names):
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="GSF 渲染器全量冒烟（零崩溃 + 非空率，不写盘）")
-    ap.add_argument("--corpus", default=str(DUMP),
-                    help="dump_newest_only.txt 路径")
+    ap.add_argument("--corpus", default=DUMP,
+                    help="dump_newest_only.txt 路径（缺省取 GSF_DUMP 环境变量）")
     ap.add_argument("--backend", default="legacy-kurgm")
     ap.add_argument("--closure", action="store_true",
                     help="全闭包口径（默认 stroke-only）")
@@ -91,6 +92,11 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=1,
                     help="≥2 启用多进程版")
     a = ap.parse_args()
+    if not a.corpus:
+        sys.exit("error: no corpus given\n"
+                 "usage: GSF_DUMP=<dump_newest_only.txt> python scripts/smoke_full.py "
+                 "[--limit N] [--workers N] [--closure]\n"
+                 "   or: python scripts/smoke_full.py --corpus <dump_newest_only.txt>")
     if a.workers < 1:
         sys.exit("--workers must be >= 1")
     if a.limit is not None and a.limit < 0:
