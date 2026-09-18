@@ -1,31 +1,43 @@
 # src/glyphsmith/legacy_kurgm/font/mincho_cd.py
-"""cdDrawU 家族：K/font/mincho/cd.ts（847 行）的逐 case 直译。
+"""The cdDrawU family: a case-by-case direct translation of K/font/mincho/cd.ts
+(847 lines).
 
-与 gothic_cd 的分工：共享工具（normalize/_Pen/push_polygon/
-_generate_fatten_curve）留在 gothic_cd（T8 移植时的宿主），本模块只装
-mincho 专属表；_Pen 为 mincho 补了 set_matrix2/get_polygon（pen.ts 原有，
-gothic 版未用到）。
+Division of labour with gothic_cd: the shared utilities (normalize/_Pen/
+push_polygon/_generate_fatten_curve) stay in gothic_cd (their host from the T8
+port) and this module holds only the mincho-specific tables; _Pen gained
+set_matrix2/get_polygon for mincho (both existed in pen.ts, the gothic version
+did not use them).
 
-参数表（cd.ts 各导出函数签名尾部的小整数通道）：
-- cdDrawCurveU：opt1（竖画变细量 tate）、haneAdjustment、opt3、opt4
-  （来自 dfDrawFont 的 tateAdjustment 拆分 % 10 / floor(/10) 与 a3 位）；
-- cdDrawLine：opt1（tate/mage 变细量）、urokoAdjustment、kakatoAdjustment。
-width 公式 kMinWidthT = font.kMinWidthT - opt1 / 2 逐字照抄。
+Parameter tables (the trailing small-integer channels of cd.ts's exported
+function signatures):
+- cdDrawCurveU: opt1 (the tate vertical-stroke thinning amount),
+  haneAdjustment, opt3, opt4 (from dfDrawFont's tateAdjustment split
+  % 10 / floor(/10) plus the a3 bits);
+- cdDrawLine: opt1 (the tate/mage thinning amount), urokoAdjustment,
+  kakatoAdjustment.
+The width formula kMinWidthT = font.kMinWidthT - opt1 / 2 is copied character
+for character.
 
-undefined 语义（cd.ts:45/86）：delta1/delta2 缺省（switch 未命中）时
-x1=y1=undefined——后续 body/head/tail 三段各自跳过。Python 用 None 直译。
-（源注释 "was NaN in original code"：kage 祖传 NaN 方案的现行为即 undefined。）
+undefined semantics (cd.ts:45/86): when delta1/delta2 are absent (the switch
+matched nothing) x1=y1=undefined — the body/head/tail sections then each skip
+their part. Python translates this with None.
+(source comment "was NaN in original code": the current behaviour of kage's
+hereditary NaN scheme is exactly undefined.)
 
-JS % 与 switch：a1 % 100 用 math.fmod（JS 截断余数）；drawCurveHead/
-drawCurveTail/cdDrawLine 的 switch(a1)/switch(a2) 用【原值】匹配——a1=132
-（kirikuchi 打包位）不命中 case 22，只有 drawCurveBody 的 suiheisen 分支
-认 132。逐处照抄，勿顺手归一。
+JS % and switch: a1 % 100 uses math.fmod (JS truncated remainder); the
+switch(a1)/switch(a2) in drawCurveHead/drawCurveTail/cdDrawLine match on the
+RAW value — a1=132 (the kirikuchi packed bit) does not hit case 22, and only
+drawCurveBody's suiheisen branch recognises 132. Copied everywhere; do not
+tidy this up while passing by.
 
-JS 数组越界 → undefined → NaN：kAdjustKakatoL/R、kAdjustUrokoX/Y 的索引
-超出时源不抛错、坐标变 NaN 后被 Polygons.push 拒绝；Python 会 IndexError，
-以 _js_index 等价复刻（越界/负索引 → NaN，负索引在 JS 中同样 undefined）。
+JS array out of range → undefined → NaN: when the index into
+kAdjustKakatoL/R or kAdjustUrokoX/Y goes out of range the source does not
+raise, and the resulting NaN coordinates are rejected by Polygons.push; Python
+would raise IndexError, so _js_index replicates the equivalent (out of
+range/negative index → NaN; a negative index is likewise undefined in JS).
 
-顶点顺序指纹敏感（铁律 2）：push 顺/逆时针、首点位置一律照抄源。
+Vertex order is fingerprint-sensitive (hard rule 2): push winding direction and
+the position of the first point are always copied from the source.
 """
 from __future__ import annotations
 
@@ -42,23 +54,25 @@ _NAN = float("nan")
 
 
 def _js_index(arr: list, i: int) -> float:
-    """JS arr[i] 越界（含负索引）→ undefined → 参与算术后为 NaN。"""
+    """JS arr[i] out of range (negative included) → undefined → NaN once used in arithmetic."""
     if 0 <= i < len(arr):
         return arr[i]
     return _NAN
 
 
 def _floor_poly(pts: list[tuple[float, float, int]]) -> list[tuple[float, float, int]]:
-    """K/polygon.ts:365-375 Polygon.floor()：对 ×10 内部坐标取整 = 用户坐标
-    截断到 0.1 网格（drawCurveBody suiheisen 分支在 push 前的原位调用）。"""
+    """K/polygon.ts:365-375 Polygon.floor(): round the ×10 internal coordinates
+    = user coordinates truncated to the 0.1 grid (called in place by
+    drawCurveBody's suiheisen branch before push)."""
     return [(math.floor(x * 10) / 10, math.floor(y * 10) / 10, off)
             for x, y, off in pts]
 
 
-# ── K/curve.ts 移植（T11 落地于 ..curve）────────────────────────
-# _divide_curve / _find_offcurve 见模块顶部 import（别名保持调用点不变）；
-# generateFattenCurve（curve.ts:53-97）仍由 gothic_cd._generate_fatten_curve
-# 提供（T8 宿主，mincho 两个分支共用）。
+# ── K/curve.ts port (landed in ..curve during T11) ─────────────
+# _divide_curve / _find_offcurve come from this module's top import (the
+# aliases keep the call sites unchanged); generateFattenCurve (curve.ts:53-97)
+# is still provided by gothic_cd._generate_fatten_curve (its T8 host, shared by
+# both mincho branches).
 
 
 # ── K/font/mincho/cd.ts:8-122 cdDrawCurveU ──────────────────────
@@ -257,8 +271,9 @@ def _draw_curve_body(font, outline,
                 point1 = poly2[index]
                 point2 = poly2[index + 1]
                 if point1[1] <= y1 <= point2[1]:
-                    # 除法走 JS 语义（0 除数 → ±Inf/NaN，多边形由 push 丢弃
-                    # ——T16 闭包冒烟 1 字形 hkcs_m31184 在此除零）
+                    # division uses JS semantics (0 divisor → ±Inf/NaN, the
+                    # polygon is dropped by push — the T16 closure smoke found
+                    # 1 glyph, hkcs_m31184, dividing by zero here)
                     from ..geom2d import js_div
                     newx1 = point2[0] + js_div((point1[0] - point2[0]) * (y1 - point2[1]),
                                                point1[1] - point2[1])
@@ -450,7 +465,7 @@ def _draw_curve_tail(outline, font,
         # poly.reverse();
 
 
-# ── K/font/mincho/cd.ts:494-509 导出薄壳 ────────────────────────
+# ── K/font/mincho/cd.ts:494-509 exported thin shells ────────────
 def cd_draw_bezier(font, outline,
                    x1, y1, x2, y2, x3, y3, x4, y4,
                    a1, a2,

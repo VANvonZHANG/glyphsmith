@@ -1,25 +1,30 @@
 # src/glyphsmith/legacy_kurgm/curve.py
-"""K/curve.ts 的逐行移植：divideCurve（:4-23）/ findOffCurve（:27-49）。
+"""Line-by-line port of K/curve.ts: divideCurve (:4-23) / findOffCurve (:27-49).
 
-curve.ts 第三个导出 generateFattenCurve（:53-97）已随 T8 在
-font/gothic_cd.py::_generate_fatten_curve 落地（当时作为 gothic cd.ts 的
-上游依赖一并移植，mincho_cd 复用之），本模块不重复实现。
+curve.ts's third export, generateFattenCurve (:53-97), already landed with T8
+in font/gothic_cd.py::_generate_fatten_curve (ported then as an upstream
+dependency of gothic cd.ts, and reused by mincho_cd), so this module does not
+reimplement it.
 
-util.ts 依赖：ternarySearchMin（:61-74）随本模块首次落地；
-quadraticBezier（:21-24）为 gothic_cd._quadratic_bezier 的同公式最小副本
-（见下）。find_offcurve 的最小二乘目标 = 采样曲线上各点到二次贝塞尔的
-偏差平方和，x/y 两维独立三叉搜索（区间 [s±area]，area=8）。
+util.ts dependencies: ternarySearchMin (:61-74) lands here for the first time
+with this module; quadraticBezier (:21-24) is a minimal copy of
+gothic_cd._quadratic_bezier with the same formula (see below). find_offcurve's
+least-squares objective is the sum of squared deviations from each point on the
+sampled curve to a quadratic Bézier, with independent ternary searches in the x
+and y dimensions (interval [s±area], area=8).
 """
 from __future__ import annotations
 
 import math
 
 # ── K/util.ts:21-24 quadraticBezier ─────────────────────────────
-# 与 font/gothic_cd.py::_quadratic_bezier 同公式的最小副本：本模块位于
-# font 层之下（mincho_cd 模块级 import 本模块），不得反向 import
-# font/gothic_cd——那会成环 curve → font/__init__ → mincho → mincho_cd
-# → curve（部分初始化模块上 from-import 直接 ImportError）。公式逐字符
-# 同源、求值顺序不动，golden 锁定。
+# A minimal copy of font/gothic_cd.py::_quadratic_bezier with the same formula:
+# this module sits below the font layer (mincho_cd imports it at module level),
+# so it must not import font/gothic_cd back — that would create the cycle
+# curve → font/__init__ → mincho → mincho_cd → curve (a from-import on a
+# partially initialised module is an immediate ImportError). The formula is
+# character-for-character the same and the evaluation order is untouched,
+# locked by golden.
 def _quadratic_bezier(p1, p2, p3, t):
     s = 1 - t
     return (s * s) * p1 + 2 * (s * t) * p2 + (t * t) * p3
@@ -27,7 +32,7 @@ def _quadratic_bezier(p1, p2, p3, t):
 
 # ── K/util.ts:61-74 ternarySearchMin ────────────────────────────
 def ternary_search_min(func, left, right, eps=1e-5):
-    """三叉搜索求 func 最小值点（kurgm 精度 eps=1E-5，区间收缩算式照抄）。"""
+    """Ternary search for the minimiser of func (kurgm's eps=1E-5; interval shrinking copied)."""
     while left + eps < right:
         x1 = left + (right - left) / 3
         x2 = right - (right - left) / 3
@@ -42,8 +47,9 @@ def ternary_search_min(func, left, right, eps=1e-5):
 
 # ── K/curve.ts:4-23 divideCurve ─────────────────────────────────
 def divide_curve(x1, y1, sx1, sy1, x2, y2, curve):
-    """按 rate=0.5 把控制多边形一分为二，返回 (cut_index, (off1, off2))：
-    off = 各半段的六个数 [ax,ay, cx,cy, bx,by]（c 为新段隐含控制点）。"""
+    """Split the control polygon in two at rate=0.5, returning
+    (cut_index, (off1, off2)): off = the six numbers of each half
+    [ax,ay, cx,cy, bx,by] (c being the new segment's implied control point)."""
     rate = 0.5
     cut = math.floor(len(curve) * rate)
     cut_rate = cut / len(curve)
@@ -60,10 +66,13 @@ def divide_curve(x1, y1, sx1, sy1, x2, y2, curve):
 
 # ── K/curve.ts:27-49 findOffCurve ───────────────────────────────
 def find_offcurve(curve, sx, sy):
-    """曲线拟合（kUseCurve）：首末点作锚，在 [sx-8, sx+8]×[sy-8, sy+8] 内
-    三叉搜索二次贝塞尔控制点，最小化对整条采样曲线的最小二乘偏差。
+    """Curve fitting (kUseCurve): anchor on the first and last points, and
+    ternary-search the quadratic Bézier control point inside
+    [sx-8, sx+8]×[sy-8, sy+8] to minimise the least-squares deviation from the
+    whole sampled curve.
 
-    返回 [nx1, ny1, minx, miny, nx2, ny2]（首点 x/y、控制点 x/y、末点 x/y）。
+    Returns [nx1, ny1, minx, miny, nx2, ny2] (first point x/y, control point
+    x/y, last point x/y).
     """
     nx1, ny1 = curve[0]
     nx2, ny2 = curve[len(curve) - 1]

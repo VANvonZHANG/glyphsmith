@@ -1,20 +1,27 @@
 # src/glyphsmith/legacy_kurgm/font/gothic_cd.py
-"""cdDrawU 家族：K/font/gothic/cd.ts（165 行）的逐 case 直译。
+"""The cdDrawU family: a case-by-case direct translation of K/font/gothic/cd.ts
+(165 lines).
 
-一并移植 cd.ts 依赖的三个上游工具（本模块私有；mincho cd 表 T10 需要时再
-提取共享）：
-- _Pen ← K/pen.ts（局部坐标 → 全局坐标的笔位置/姿态）
-- normalize / 二三次 Bézier(+导数) ← K/util.ts:5-55
-- _generate_fatten_curve ← K/curve.ts:53-97（曲线沿法线增肥为左右轮廓带）
+Three upstream utilities that cd.ts depends on are ported along with it
+(private to this module; to be factored out when the T10 mincho cd tables need
+them):
+- _Pen ← K/pen.ts (pen position/heading, local coords → global coords)
+- normalize / quadratic and cubic Bézier (+ derivatives) ← K/util.ts:5-55
+- _generate_fatten_curve ← K/curve.ts:53-97 (fatten a curve along its normal
+  into left/right outline bands)
 
-push 语义（铁律 1）：kurgm 中一切轮廓经 Polygons.push（K/polygons.ts:54-84）
-入栈——少于 3 点拒绝；floor（K/polygon.ts:365-375 对 ×10 内部坐标取整 =
-用户坐标截断到 0.1 网格）；NaN 拒绝；退化（minx===maxx 或 miny===maxy，
-初值 200/0/200/0 照抄）拒绝。本模块以 push_polygon() 为唯一落 Outline 入口
-复刻该语义；Outline.push 本身不 floor（T2 契约），floor 责任在此。
+push semantics (hard rule 1): in kurgm every contour enters the stack through
+Polygons.push (K/polygons.ts:54-84) — fewer than 3 points is rejected; floor
+(K/polygon.ts:365-375 rounds the ×10 internal coordinates = user coordinates
+truncated to the 0.1 grid); NaN is rejected; degenerate polygons (minx===maxx
+or miny===maxy, with the initial values 200/0/200/0 copied verbatim) are
+rejected. This module replicates those semantics through push_polygon(), the
+single entry point into the Outline; Outline.push itself does not floor (T2
+contract), the floor responsibility lives here.
 
-顶点顺序指纹敏感（铁律 2）：push 顺/逆时针、首点位置一律照抄源，
-不做任何规整。
+Vertex order is fingerprint-sensitive (hard rule 2): push winding direction and
+the position of the first point are always copied from the source, with no
+normalisation whatsoever.
 """
 from __future__ import annotations
 
@@ -29,13 +36,16 @@ _NAN = float("nan")
 
 # ── K/util.ts:5-18 hypot / normalize ────────────────────────────
 def _hypot(x: float, y: float) -> float:
-    """V8 Math.hypot 的忠实复刻（K/util.ts:8 = Math.hypot 绑定）。
+    """Faithful replication of V8 Math.hypot (K/util.ts:8 = the Math.hypot
+    binding).
 
-    Python math.hypot 是（近似）正确舍入，V8 用 max*sqrt((x/max)²+(y/max)²)
-    的缩放算法——两者有可观测 ULP 差（实测 hypot(-9.41…,17.64…) → V8
-    19.999999999999996 vs Python 20.0，直接翻转 0.1 网格 floor 与指纹）。
-    200k 随机对全量对拍一致。NaN/Inf 语义：任一 ±Inf → +Inf（压过 NaN）；
-    否则任一 NaN → NaN；全零 → +0。两参版签名（kurgm 只用两参）。
+    Python math.hypot is (approximately) correctly rounded, whereas V8 uses the
+    scaling algorithm max*sqrt((x/max)²+(y/max)²) — the two differ observably
+    in the last ULP (measured: hypot(-9.41…,17.64…) → V8 gives
+    19.999999999999996 vs Python 20.0, which flips the 0.1-grid floor and hence
+    the fingerprint). 200k random pairs agree across the whole sweep. NaN/Inf
+    semantics: either ±Inf → +Inf (overriding NaN); otherwise either NaN → NaN;
+    all zeros → +0. Two-argument signature (kurgm only ever uses two).
     """
     if math.isinf(x) or math.isinf(y):
         return float("inf")
@@ -50,11 +60,13 @@ def _hypot(x: float, y: float) -> float:
 
 
 def normalize(x: float, y: float, magnitude: float = 1) -> tuple[float, float]:
-    """K/util.ts:11-18 normalize：同角度、新模长的向量。
+    """K/util.ts:11-18 normalize: same angle, new magnitude.
 
-    零向量分支照抄源的奇技：`1 / x === Infinity ? magnitude : -magnitude`
-    （+0 → +Infinity → +magnitude；-0 → -Infinity → -magnitude）。Python
-    1/x 对 0 抛 ZeroDivisionError，用 copysign 区分 ±0 等价实现。
+    The zero-vector branch copies the source's trick:
+    `1 / x === Infinity ? magnitude : -magnitude`
+    (+0 → +Infinity → +magnitude; -0 → -Infinity → -magnitude). Python's 1/x
+    raises ZeroDivisionError for 0, so copysign is used to tell ±0 apart as an
+    equivalent implementation.
     """
     if x == 0 and y == 0:
         return (magnitude if math.copysign(1.0, x) > 0 else -magnitude, 0)
@@ -62,7 +74,7 @@ def normalize(x: float, y: float, magnitude: float = 1) -> tuple[float, float]:
     return (x * k, y * k)
 
 
-# ── K/util.ts:21-55 Bézier 基元（算式逐项照抄，浮点求值顺序不动）──
+# ── K/util.ts:21-55 Bézier primitives (formulas verbatim, eval order kept) ──
 def _quadratic_bezier(p1, p2, p3, t):
     s = 1 - t
     return (s * s) * p1 + 2 * (s * t) * p2 + (t * t) * p3
@@ -83,7 +95,7 @@ def _cubic_bezier_deriv(p1, p2, p3, p4, t):
 
 # ── K/pen.ts:9-68 Pen ───────────────────────────────────────────
 class _Pen:
-    """K/pen.ts Pen：按笔位置与朝向把局部坐标换算为全局坐标。"""
+    """K/pen.ts Pen: maps local coordinates to global given pen position and heading."""
 
     def __init__(self, x: float, y: float) -> None:
         self.x = x
@@ -127,14 +139,14 @@ class _Pen:
 
     def get_polygon(self, local_points: list[tuple[float, float, int]]
                     ) -> list[tuple[float, float, int]]:
-        """K/pen.ts:65-67 getPolygon：局部点表整体换算为全局轮廓。"""
+        """K/pen.ts:65-67 getPolygon: map a whole local point list to a global contour."""
         return [self.get_point(x, y, off) for x, y, off in local_points]
 
 
 # ── K/curve.ts:53-97 generateFattenCurve ────────────────────────
 def _generate_fatten_curve(x1, y1, sx1, sy1, sx2, sy2, x2, y2,
                            k_rate, width_func):
-    """曲线增肥：沿法线偏移 ±width，产出左右两条轮廓带（点序照抄源）。"""
+    """Fatten a curve: offset ±width along the normal; left/right bands (point order copied)."""
     left: list[tuple[float, float]] = []
     right: list[tuple[float, float]] = []
 
@@ -167,7 +179,7 @@ def _generate_fatten_curve(x1, y1, sx1, sy1, sx2, sy2, x2, y2,
 
         # line SUICHOKU by vector
         if _round(ix) == 0 and _round(iy) == 0:
-            ia, ib = -width, 0           # ?????（源注释）
+            ia, ib = -width, 0           # ????? (source comment)
         else:
             ia, ib = normalize(-iy, ix, width)
 
@@ -177,25 +189,32 @@ def _generate_fatten_curve(x1, y1, sx1, sy1, sx2, sy2, x2, y2,
     return left, right
 
 
-# ── K/polygons.ts:54-84 Polygons.push（铁律 1）──────────────────
+# ── K/polygons.ts:54-84 Polygons.push (hard rule 1) ─────────────
 def _floor10(v: float) -> float:
-    """JS Math.floor 直译：NaN/±Inf 原样穿透（Python math.floor 对两者抛
-    ValueError/OverflowError——T16 全量冒烟发现：27 个字形在 NaN 坐标进
-    push 时整字形 err，而 kurgm 的 floor(NaN)=NaN 后由逐点检查丢弃）。"""
+    """Direct translation of JS Math.floor: NaN/±Inf pass through unchanged
+    (Python math.floor raises ValueError/OverflowError for both — found by the
+    T16 full-dump smoke: 27 glyphs errored out entirely when NaN coordinates
+    reached push, whereas kurgm's floor(NaN)=NaN is then dropped by the
+    per-point check)."""
     return math.floor(v) if math.isfinite(v) else v
 
 
 def push_polygon(outline: Outline, points) -> None:
-    """kurgm Polygons.push 的直译：本模块（及后续 mincho cd 表）的唯一落栈口。
+    """Direct translation of kurgm Polygons.push: the only stack entry point in
+    this module (and in the later mincho cd tables).
 
-    1. `polygon.length < 3` → 直接丢弃（返回不入栈）；
-    2. `polygon.floor()`（K/polygon.ts:365-375）：内部坐标 = 用户坐标 ×10
-       （K:33 _precision=10，push 时乘），floor 对内部坐标取整 → 用户坐标
-       截断到 0.1 网格——即使轮廓最终被拒绝也已完成（本地副本，无副作用）；
-    3. NaN 任一坐标 → 丢弃（floor(NaN)=NaN，源在 min/max 更新后逐点检查）；
-       Infinity 不被拦截（与源一致，交由指纹层报 non-finite）；
-    4. 退化拒绝：minx===maxx 或 miny===maxy（初值 200/0/200/0 照抄——
-       全部坐标同侧越界时可能同时触到初值，语义随之）。
+    1. `polygon.length < 3` → discarded outright (returns without pushing);
+    2. `polygon.floor()` (K/polygon.ts:365-375): internal coordinates = user
+       coordinates ×10 (K:33 _precision=10, applied on push), and floor rounds
+       the internal coordinates → user coordinates truncated to the 0.1 grid —
+       this has already happened even if the contour is ultimately rejected (a
+       local copy, no side effects);
+    3. any NaN coordinate → discarded (floor(NaN)=NaN; the source checks per
+       point after updating min/max); Infinity is not intercepted (matching the
+       source, it is left to the fingerprint layer to report non-finite);
+    4. degenerate rejection: minx===maxx or miny===maxy (initial values
+       200/0/200/0 copied verbatim — coordinates all out of range on the same
+       side can hit the initial values too, and the semantics follow).
     """
     if len(points) < 3:
         return
@@ -220,14 +239,16 @@ def push_polygon(outline: Outline, points) -> None:
         outline.contours.append(pts)
 
 
-# ── K/font/gothic/cd.ts:8-84 曲线（cdDrawU 家族）────────────────
+# ── K/font/gothic/cd.ts:8-84 curves (the cdDrawU family) ────────
 def _cd_draw_curve_u(font, outline,
                      x1, y1, sx1, sy1, sx2, sy2, x2, y2,
                      _ta1=0, _ta2=0) -> None:
-    # cd.ts:15-17：源声明 let a1 / let a2 后从未赋值，switch (a1 % 10)
-    # 实为 undefined % 10 = NaN——无 case 命中，delta1/delta2 恒 0，两个
-    # if 块为死代码（lib/esm 编译产物同此）。以 NaN 哨兵直译，保持结构与
-    # 运行时行为双忠实（参数名 _ta1/_ta2 照抄，即源中本就未用）。
+    # cd.ts:15-17: the source declares `let a1` / `let a2` and never assigns
+    # them, so switch (a1 % 10) is really undefined % 10 = NaN — no case
+    # matches, delta1/delta2 stay 0, and both if blocks are dead code (the
+    # lib/esm build output is the same). Translated with a NaN sentinel to stay
+    # faithful in both structure and runtime behaviour (the parameter names
+    # _ta1/_ta2 are copied over — the source never used them either).
     a1 = _NAN
     a2 = _NAN
 
@@ -240,7 +261,7 @@ def _cd_draw_curve_u(font, outline,
 
     if delta1 != 0:
         if x1 == sx1 and y1 == sy1:
-            dx1, dy1 = 0, delta1        # ?????（源注释）
+            dx1, dy1 = 0, delta1        # ????? (source comment)
         else:
             dx1, dy1 = normalize(x1 - sx1, y1 - sy1, delta1)
         x1 += dx1
@@ -255,7 +276,7 @@ def _cd_draw_curve_u(font, outline,
 
     if delta2 != 0:
         if sx2 == x2 and sy2 == y2:
-            dx2, dy2 = 0, -delta2       # ?????（源注释）
+            dx2, dy2 = 0, -delta2       # ????? (source comment)
         else:
             dx2, dy2 = normalize(x2 - sx2, y2 - sy2, delta2)
         x2 += dx2
@@ -292,7 +313,7 @@ def cd_draw_curve(font, outline,
     _cd_draw_curve_u(font, outline, x1, y1, x2, y2, x2, y2, x3, y3, a1, a2)
 
 
-# ── K/font/gothic/cd.ts:101-165 直线 ────────────────────────────
+# ── K/font/gothic/cd.ts:101-165 lines ───────────────────────────
 def cd_draw_line(font, outline,
                  tx1, ty1, tx2, ty2,
                  ta1, ta2) -> None:
@@ -307,7 +328,7 @@ def cd_draw_line(font, outline,
 
     pen1 = _Pen(x1, y1)
     pen2 = _Pen(x2, y2)
-    if x1 != x2 or y1 != y2:            # ?????（源注释）
+    if x1 != x2 or y1 != y2:            # ????? (source comment)
         pen1.set_down(x2, y2)
         pen2.set_up(x1, y1)
 
@@ -330,6 +351,6 @@ def cd_draw_line(font, outline,
             pen2.get_point(-w, 0),
             pen1.get_point(-w, 0)]
     if tx1 == tx2:
-        poly.reverse()                  # ?????（源注释）
+        poly.reverse()                  # ????? (source comment)
 
     push_polygon(outline, poly)

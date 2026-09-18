@@ -1,5 +1,5 @@
-"""2D 几何基元：kurgm kage-engine K/2d.ts 的逐行移植（cross 为内部辅助，
-round 为 K/util.ts:85-87 的直译）。"""
+"""2D geometry primitives: a line-by-line port of kurgm kage-engine's K/2d.ts
+(cross is an internal helper; round is a direct translation of K/util.ts:85-87)."""
 from __future__ import annotations
 
 import math
@@ -8,21 +8,24 @@ import math
 
 
 def _round(v: float, rate: float = 1e8) -> float:
-    """K/util.ts round(v, rate=1E8) = Math.round(v*rate)/rate。
+    """K/util.ts round(v, rate=1E8) = Math.round(v*rate)/rate.
 
-    JS Math.round 是 half-up（0.5 向 +∞），Python round 是 banker's rounding，
-    故用 math.floor(x + 0.5) 直译（仅 0.49999999999999994 级浮点边界与 JS
-    有已知差异；KAGE 坐标域内叉积均为整数值乘 1e5，不受影响）。
-    floor 走 js_floor：JS Math.round(NaN)=NaN 穿透（T16 闭包冒烟 2 字形
-    在此 ValueError）。
+    JS Math.round is half-up (0.5 towards +∞) whereas Python round is banker's
+    rounding, so math.floor(x + 0.5) is used as the direct translation (only
+    for float boundaries of the 0.49999999999999994 kind is there a known
+    difference from JS; inside KAGE's coordinate domain the cross products are
+    integer values times 1e5 and are unaffected). floor goes through js_floor:
+    JS Math.round(NaN)=NaN passes through (the T16 closure smoke found 2 glyphs
+    raising ValueError here).
     """
     return js_floor(v * rate + 0.5) / rate
 
 
 def js_div(a: float, b: float) -> float:
-    """IEEE-754 除法（JS 语义）：b==0 → ±Inf / 0/0 → NaN，不抛
-    ZeroDivisionError（T16 全量闭包冒烟：119 字形退化 box 在 stretch 里
-    除零，kurgm 出 NaN 坐标由 push_polygon 丢弃）。"""
+    """IEEE-754 division (JS semantics): b==0 → ±Inf / 0/0 → NaN, without
+    raising ZeroDivisionError (T16 full closure smoke: in 119 glyphs a
+    degenerate box divided by zero inside stretch, and kurgm's resulting NaN
+    coordinates were dropped by push_polygon)."""
     if b:
         return a / b
     if a > 0:
@@ -33,21 +36,22 @@ def js_div(a: float, b: float) -> float:
 
 
 def js_floor(v: float) -> float:
-    """JS Math.floor：NaN/±Inf 原样穿透（Python math.floor 对两者抛）。"""
+    """JS Math.floor: NaN/±Inf pass through unchanged (Python math.floor raises for both)."""
     return math.floor(v) if math.isfinite(v) else v
 
 
 def js_min(a: float, b: float) -> float:
-    """JS Math.min：NaN 传染（任一操作数 NaN → NaN）。Python min 遇 NaN
-    比较恒 False 会静默丢弃 NaN 保有限值——闭包嵌套 stretch 的 box 污染
-    语义（T16 冒烟 84 字形多画）依赖本语义。"""
+    """JS Math.min: NaN contagion (either operand NaN → NaN). Python's min
+    compares False against NaN and would silently drop it in favour of a finite
+    value — the box-poisoning semantics of nested closure stretches (the T16
+    smoke found 84 glyphs drawn with extra ink) depend on this."""
     if math.isnan(a) or math.isnan(b):
         return math.nan
     return a if a <= b else b
 
 
 def js_max(a: float, b: float) -> float:
-    """JS Math.max：同 js_min，NaN 传染。"""
+    """JS Math.max: as js_min, NaN contagion."""
     if math.isnan(a) or math.isnan(b):
         return math.nan
     return a if a >= b else b

@@ -1,9 +1,10 @@
 # src/glyphsmith/legacy_kurgm/__init__.py
-"""legacy-kurgm 后端：kurgm/kage-engine 的忠实 Python 移植。
+"""legacy-kurgm backend: a faithful Python port of kurgm/kage-engine.
 
-移植谱系：kurgm/kage-engine（TypeScript，移植基准）← kamichikoichi/kage-engine
-（原版，kagecd.js/kagedf.js 规则表出处）；Python 移植参考 HowardZorn/kage-engine；
-环检测思路回移植自 takushun-wu/kage-cpp。GPLv3。
+Porting lineage: kurgm/kage-engine (TypeScript, the porting baseline) ←
+kamichikoichi/kage-engine (the original, source of the kagecd.js/kagedf.js rule
+tables); the Python port took HowardZorn/kage-engine as a reference; the cycle
+detection idea was back-ported from takushun-wu/kage-cpp. GPLv3.
 """
 from __future__ import annotations
 
@@ -12,13 +13,17 @@ from glyphsmith.protocol import Backend, RenderOptions
 
 
 class LegacyKurgmBackend(Backend):
-    """kurgm 管线对外封装：resolve 结果 → expand → font drawers → Outline。
+    """The kurgm pipeline's public wrapper: resolve result → expand → font
+    drawers → Outline.
 
-    简报骨架的两处现状适配（公开行为不变）：
-    - kUseCurve 走 Font.k_use_curve 属性（T7 委托 params.k_use_curve 的
-      snake_case 字段；直接写 font.params.kUseCurve 会静默新建无关属性）；
-    - select_font(Shotai.K_GOTHIC) 自 T8 起返回真 GothicFont（非 _StubFont），
-      mincho 在 T10 前仍是占位（不画笔画）。
+    Two places where the brief's skeleton was adapted to reality (public
+    behaviour unchanged):
+    - kUseCurve goes through the Font.k_use_curve property (T7 delegates to the
+      snake_case params.k_use_curve field; writing font.params.kUseCurve
+      directly would silently create an unrelated attribute);
+    - select_font(Shotai.K_GOTHIC) has returned a real GothicFont since T8 (not
+      _StubFont); mincho was still a placeholder (drawing no strokes) before
+      T10.
     """
 
     name = "legacy-kurgm"

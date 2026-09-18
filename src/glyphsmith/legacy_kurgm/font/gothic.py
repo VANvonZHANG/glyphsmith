@@ -1,15 +1,19 @@
 # src/glyphsmith/legacy_kurgm/font/gothic.py
-"""GothicFont：K/font/gothic/index.ts（dfDrawFont + Gothic 类）的直译。
+"""GothicFont: a direct translation of K/font/gothic/index.ts (dfDrawFont +
+the Gothic class).
 
-adjustStrokes 结论（读源确认，gothic/index.ts:168 vs mincho/index.ts:356）：
-Mincho.getDrawers 先过 this.adjustStrokes(strokesArray).map(...)（明朝专用
-笔画参数整调七连管），而 Gothic 覆写的 getDrawers 直接
-strokesArray.map(stroke => dfDrawFont(this, polygons, stroke))——**Gothic
-完全跳过 mincho 的 adjustStrokes**，原始 Stroke 原样进 dfDrawFont。
-另 Gothic extends Mincho（K:165）：参数表/setSize 全继承，仅覆写 shotai
-与 getDrawers；本仓库基座 Font 已含共享管线，故 GothicFont 只需覆写
-stroke 分发（_stroke_drawer → df_draw_font），TransformOp 通道（case 0 的
-0:97/98/99 行）沿用 T7 的基类分发。
+adjustStrokes finding (confirmed by reading the source, gothic/index.ts:168
+vs mincho/index.ts:356): Mincho.getDrawers first runs
+this.adjustStrokes(strokesArray).map(...) (the mincho-only seven-stage stroke
+parameter adjust pipeline), whereas Gothic's overriding getDrawers calls
+strokesArray.map(stroke => dfDrawFont(this, polygons, stroke)) directly —
+**Gothic skips mincho's adjustStrokes entirely**, and the raw Stroke reaches
+dfDrawFont untouched.
+Also Gothic extends Mincho (K:165): the parameter table/setSize are wholly
+inherited and only shotai and getDrawers are overridden; this repo's base Font
+already carries the shared pipeline, so GothicFont only has to override stroke
+dispatch (_stroke_drawer → df_draw_font), while the TransformOp channel
+(lines 0:97/98/99 of case 0) uses T7's base-class dispatch.
 """
 from __future__ import annotations
 
@@ -24,10 +28,11 @@ from .transform import df_transform
 
 
 def df_draw_font(font: Font, outline: Outline, stroke) -> None:
-    """gothic/index.ts:10-162 dfDrawFont 的逐 case 直译。
+    """Case-by-case direct translation of gothic/index.ts:10-162 dfDrawFont.
 
-    stroke 字段 = RStroke（kurgm Stroke 构造后的分解字段）。宽度/曲率算式
-    逐项照抄（kMage/kWidth 等取自 font.params）；Math.floor 原位保留。
+    stroke fields = RStroke (the decomposition fields produced by kurgm's
+    Stroke constructor). The width/curvature formulas are copied term by term
+    (kMage/kWidth etc. come from font.params); Math.floor is kept in place.
     """
     a1_100 = stroke.a1_100
     a2_100 = stroke.a2_100
@@ -153,25 +158,30 @@ def df_draw_font(font: Font, outline: Outline, stroke) -> None:
             ty1 = y4
             tx2 = x4 + font.params.k_mage * 0.5
             ty2 = y4 - font.params.k_mage * 2
-            # 源此处留有按中点拆两段 cdDrawCurve 的注释掉旧实现，照抄现行为
+            # the source keeps a commented-out old implementation here that
+            # split this into two cdDrawCurve calls at the midpoint; current
+            # behaviour copied as-is
             cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, tx1, ty1, a2_100, 1)
             cd_draw_curve(font, outline, tx1, ty1, x4, y4, tx2, ty2, 1, 0)
         else:
-            # 源此处留有按中点拆两段 cdDrawCurve 的注释掉旧实现，照抄现行为
+            # the source keeps a commented-out old implementation here that
+            # split this into two cdDrawCurve calls at the midpoint; current
+            # behaviour copied as-is
             cd_draw_bezier(font, outline, x1, y1, x2, y2, x3, y3, x4, y4, a2_100, a3_100)
     elif a1_100 == 7:
         cd_draw_line(font, outline, x1, y1, x2, y2, a2_100, 1)
         cd_draw_curve(font, outline, x2, y2, x3, y3, x4, y4, 1, a3_100)
     elif a1_100 == 9:
-        pass    # may not be exist（源注释；kageCanvas 旧代码已注释）
-    # default: break（无操作）
+        pass    # may not be exist (source comment; old kageCanvas code commented out)
+    # default: break (no operation)
 
 
 class GothicFont(Font):
-    """ゴシック体。← K/font/gothic/index.ts:164-173 Gothic。
+    """Gothic. ← K/font/gothic/index.ts:164-173 Gothic.
 
-    仅覆写 shotai 与 getDrawers 语义（跳过 mincho 的 adjustStrokes，见模块
-    docstring）；参数、setSize 全继承基座（源中继承自 Mincho）。
+    Only the shotai and getDrawers semantics are overridden (skipping mincho's
+    adjustStrokes, see the module docstring); parameters and setSize are wholly
+    inherited from the base (in the source, inherited from Mincho).
     """
 
     shotai = Shotai.K_GOTHIC

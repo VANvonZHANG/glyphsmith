@@ -1,9 +1,10 @@
 # src/glyphsmith/legacy_kurgm/font/base.py
-"""字体基座：Shotai / FontParams / Font / _StubFont。
+"""Font base: Shotai / FontParams / Font / _StubFont.
 
-← K/font/shotai.ts、K/font/index.ts（FontInterface/select）、
-K/font/mincho/index.ts:224-353（Mincho 字段声明与 setSize）、
-K/font/gothic/index.ts:164-173（Gothic 只覆写 shotai/getDrawers，参数全继承）。
+← K/font/shotai.ts, K/font/index.ts (FontInterface/select),
+K/font/mincho/index.ts:224-353 (Mincho field declarations and setSize),
+K/font/gothic/index.ts:164-173 (Gothic overrides only shotai/getDrawers;
+all parameters are inherited).
 """
 from __future__ import annotations
 
@@ -19,69 +20,78 @@ from .transform import df_transform
 
 
 class Shotai(str, Enum):
-    """书体枚举。← K/font/shotai.ts KShotai。
+    """Shotai (typeface genre) enum. ← K/font/shotai.ts KShotai.
 
-    kurgm 源值为数值枚举（kMincho=0 / kGothic=1）；本仓库沿用 corpus/golden
-    的 shotai 串 "m"/"g"（task-7 简报规定），语义一一对应。
+    The kurgm source value is a numeric enum (kMincho=0 / kGothic=1); this repo
+    keeps the corpus/golden shotai strings "m"/"g" (mandated by the task-7
+    brief), in one-to-one correspondence.
     """
 
-    K_MINCHO = "m"                  # 明朝体（K:6-10 kMincho）
-    K_GOTHIC = "g"                  # ゴシック体（K:11-15 kGothic）
+    K_MINCHO = "m"                  # mincho (K:6-10 kMincho)
+    K_GOTHIC = "g"                  # gothic (K:11-15 kGothic)
 
 
 @dataclass
 class FontParams:
-    """字体参数基座，Mincho/Gothic 两族共用。
+    """Font parameter base, shared by the mincho and gothic families.
 
-    字段集与 set_size 赋值公式逐字段抄自 K/font/mincho/index.ts:226-353
-    （声明 226-297，setSize 303-353）；Gothic 无自己的参数（K/font/gothic/
-    index.ts:165 `class Gothic extends Mincho`，仅覆写 shotai 与 getDrawers，
-    构造 → 继承的 Mincho.setSize），故同一 dataclass 服务两族。
-    dataclass 默认值 = else 分支（= TS 构造函数 this.setSize() 无参调用）。
+    The field set and the set_size assignment formulas are copied field by
+    field from K/font/mincho/index.ts:226-353 (declarations 226-297,
+    setSize 303-353); gothic has no parameters of its own (K/font/gothic/
+    index.ts:165 `class Gothic extends Mincho` overrides only shotai and
+    getDrawers, and its constructor → the inherited Mincho.setSize), so one
+    dataclass serves both families.
+    dataclass defaults = the else branch (= TS constructor calling
+    this.setSize() with no argument).
 
-    简报骨架假设 set_size(100) 会改 k_rate——与源不符：kRate 是类字段初始化
-    （K:234，=100，须整除 1000），setSize 只在 size===1 上分支且从不触碰
-    kRate；按源实现（简报授权"期望值以源码实际为准"）。
+    The brief's skeleton assumed set_size(100) would change k_rate — that does
+    not match the source: kRate is a class-field initializer (K:234, =100, must
+    divide 1000), and setSize branches only on size===1 and never touches
+    kRate. Implemented per source (the brief authorizes "where the brief and
+    the source disagree, the source wins").
     """
 
     # ── K:228-234 ──
     k_rate: float = 100
-    """曲线多边形近似的步长精度（K:228-234）。须为 1000 的正因数；越小曲线
-    越平滑（每条曲线约 2×1000/k_rate 个点）。setSize 不修改本字段。"""
+    """Step precision of the curve-to-polygon approximation (K:228-234). Must be
+    a positive divisor of 1000; smaller means smoother curves (roughly
+    2×1000/k_rate points per curve). setSize does not modify this field."""
 
     # ── K:235-256 ──
-    k_min_width_y: float = 2.0       # K:236 明朝横画（细部）半宽
-    k_min_width_u: float = 2.0       # K:238 明朝横画开放端ウロコ大小
-    k_min_width_t: float = 6.0       # K:240 明朝竖画（粗部）半宽
-    k_width: float = 5.0             # K:241-245 ゴシック笔画半宽；兼明朝装饰元素大小
-    k_kakato: float = 3.0            # K:247 ゴシック的カカト大小
-    k_l2r_dfatten: float = 1.1       # K:249 右払い末端宽（相对 2*k_min_width_t）
-    k_mage: float = 10.0             # K:251 左ハネ末端、折れ/乙線中段弯曲大小
-    k_use_curve: bool = False        # K:252-256 是否用 off-curve 点近似二次贝塞尔（实验性）
+    k_min_width_y: float = 2.0       # K:236 mincho horizontal stroke (thin part) half-width
+    k_min_width_u: float = 2.0       # K:238 mincho horizontal stroke open-end uroko size
+    k_min_width_t: float = 6.0       # K:240 mincho vertical stroke (thick part) half-width
+    k_width: float = 5.0             # K:241-245 gothic stroke half-width; also mincho ornament size
+    k_kakato: float = 3.0            # K:247 gothic kakato (heel) size
+    k_l2r_dfatten: float = 1.1       # K:249 right-harai tail width (rel. 2*k_min_width_t)
+    k_mage: float = 10.0             # K:251 left-hane tail / mage-otsu middle bend size
+    k_use_curve: bool = False        # K:252-256 off-curve quadratic Bézier approx (experimental)
 
-    # ── K:258-272 カカト缩短调整 ──
-    k_adjust_kakato_l: list = None   # K:258-260 左下カドカカト长（档 0-3 + 413 用）
-    k_adjust_kakato_r: list = None   # K:261-263 右下カドカカト长（档 0-3）
-    k_adjust_kakato_range_x: float = 20.0    # K:264-266 カカト下方碰撞箱宽
-    k_adjust_kakato_range_y: list = None     # K:267-269 碰撞箱高（档 0-3）
-    k_adjust_kakato_step: int = 3            # K:270-272 缩短档数（必须 3）
+    # ── K:258-272 kakato shortening adjustment ──
+    k_adjust_kakato_l: list = None   # K:258-260 bottom-left kado kakato length (0-3, plus 413)
+    k_adjust_kakato_r: list = None   # K:261-263 bottom-right kado kakato length (levels 0-3)
+    k_adjust_kakato_range_x: float = 20.0    # K:264-266 width of the collision box below the kakato
+    k_adjust_kakato_range_y: list = None     # K:267-269 collision-box height (levels 0-3)
+    k_adjust_kakato_step: int = 3            # K:270-272 number of shortening levels (must be 3)
 
-    # ── K:274-288 ウロコ缩短/碰撞调整 ──
-    k_adjust_uroko_x: list = None    # K:274-276 各收缩档的ウロコ横向大小
-    k_adjust_uroko_y: list = None    # K:277-279 各收缩档的ウロコ纵向大小
-    k_adjust_uroko_length: list = None       # K:280-282 触发收缩的横画长阈值
-    k_adjust_uroko_length_step: int = 3      # K:283-285 碰撞检测收缩档数
-    k_adjust_uroko_line: list = None         # K:286-288 ウロコ左侧碰撞箱宽
+    # ── K:274-288 uroko shortening / collision adjustment ──
+    k_adjust_uroko_x: list = None    # K:274-276 uroko horizontal size at each shrink level
+    k_adjust_uroko_y: list = None    # K:277-279 uroko vertical size at each shrink level
+    k_adjust_uroko_length: list = None       # K:280-282 horizontal length threshold for shrinking
+    k_adjust_uroko_length_step: int = 3      # K:283-285 shrink levels for collision detection
+    k_adjust_uroko_line: list = None         # K:286-288 collision-box width left of the uroko
 
     # ── K:290-297 ──
-    k_adjust_uroko2_step: int = 3            # K:290-291 按横画密度的ウロコ收缩档数
-    k_adjust_uroko2_length: float = 40.0     # K:292-293 密度收缩参数
-    k_adjust_tate_step: int = 4              # K:294-295 明朝竖画变细调整参数
-    k_adjust_mage_step: int = 5              # K:296-297 明朝折れ后半变细调整参数
+    k_adjust_uroko2_step: int = 3            # K:290-291 uroko shrink levels by stroke density
+    k_adjust_uroko2_length: float = 40.0     # K:292-293 density shrink parameter
+    k_adjust_tate_step: int = 4              # K:294-295 mincho vertical-stroke thinning parameter
+    k_adjust_mage_step: int = 5              # K:296-297 mincho mage latter-half thinning parameter
 
     def __post_init__(self) -> None:
-        # list 字段的默认值（dataclass field(default_factory) 逐个写太啰嗦，
-        # 统一在此初始化；set_size 会整体替换，不共享可变默认）
+        # Defaults for the list fields (writing out a dataclass
+        # field(default_factory) for each one is too verbose, so they are
+        # initialised here; set_size replaces them wholesale, so the mutable
+        # defaults are never shared)
         if self.k_adjust_kakato_l is None:
             self.k_adjust_kakato_l = [14, 9, 5, 2, 0]      # K:334
         if self.k_adjust_kakato_r is None:
@@ -98,14 +108,18 @@ class FontParams:
             self.k_adjust_uroko_line = [22, 26, 30]        # K:344
 
     def set_size(self, size: int | None = None) -> None:
-        """K/font/mincho/index.ts:303-353 setSize，就地重算（TS 语义：字段
-        被原地改写，持有引用的 adjust 管线可见）。
+        """K/font/mincho/index.ts:303-353 setSize, recomputed in place (TS
+        semantics: the fields are overwritten in place, visible to the adjust
+        pipeline that holds references).
 
-        size===1 走小字号分支（K:304-323），其余一切值（含 None/省略，即
-        TS 的 undefined）走默认分支（K:324-352）。注意源码 size==1 分支
-        【不】赋值 k_min_width_u / k_adjust_uroko2_step / k_adjust_uroko2_length
-        / k_adjust_tate_step / k_adjust_mage_step——TS 中构造函数已先跑无参
-        setSize()，这些字段保持默认分支值；照抄该行为（k_rate 同样不动）。
+        size===1 takes the small-size branch (K:304-323); every other value
+        (including None/omitted, i.e. TS undefined) takes the default branch
+        (K:324-352). Note the source's size==1 branch does NOT assign
+        k_min_width_u / k_adjust_uroko2_step / k_adjust_uroko2_length /
+        k_adjust_tate_step / k_adjust_mage_step — in TS the constructor has
+        already run the argument-less setSize(), so those fields keep their
+        default-branch values; that behaviour is copied verbatim (k_rate is
+        likewise untouched).
         """
         if size == 1:
             self.k_min_width_y = 1.2                 # K:305
@@ -161,27 +175,31 @@ Drawer = Callable[[Outline], None]
 
 
 class Font:
-    """字体基类。← K/font/index.ts:13-18 FontInterface + Mincho 构造骨架
-    （K:299-301 构造函数即 this.setSize()；setSize K:303）。
+    """Font base class. ← K/font/index.ts:13-18 FontInterface + the Mincho
+    constructor skeleton (K:299-301 the constructor is just this.setSize();
+    setSize is K:303).
 
-    get_drawers 是 drawers 管线入口：expand() 的产物逐项转 drawer——
-    TransformOp（0:97/98/99 行）→ df_transform drawer；RStroke →
-    _stroke_drawer（本任务 no-op 占位，T8 Gothic / T10 Mincho 替换为
-    dfDrawFont 的 case 分派）。
+    get_drawers is the entry point of the drawers pipeline: each item produced
+    by expand() becomes a drawer — TransformOp (lines 0:97/98/99) →
+    the df_transform drawer; RStroke → _stroke_drawer (a no-op placeholder in
+    this task, replaced by the dfDrawFont case dispatch in T8 Gothic /
+    T10 Mincho).
     """
 
     shotai: Shotai = Shotai.K_MINCHO
-    """书体标记：TS 为实例字段（K:226 readonly shotai = KShotai.kMincho；
-    gothic/index.ts:166 覆写为 kGothic）。Python 用类属性表达同一语义，
-    真实字体子类直接覆写；_StubFont 一类两役，由 select_font 注入实例值。"""
+    """Shotai marker: in TS an instance field (K:226 readonly shotai =
+    KShotai.kMincho; gothic/index.ts:166 overrides it to kGothic). Python
+    expresses the same semantics with a class attribute, overridden directly by
+    the real font subclasses; _StubFont serves both roles and gets its instance
+    value injected by select_font."""
 
     def __init__(self, shotai: Shotai | None = None) -> None:
         if shotai is not None:
             self.shotai = shotai
         self.params = FontParams()
-        self.set_size()              # K:299-301：构造即 setSize()（无参=默认分支）
+        self.set_size()              # K:299-301: ctor is setSize() (no arg = default branch)
 
-    # K/font/index.ts:15：kUseCurve 挂在字体上（可写），委托 params
+    # K/font/index.ts:15: kUseCurve lives on the font (writable) and delegates to params
     @property
     def k_use_curve(self) -> bool:
         return self.params.k_use_curve
@@ -191,36 +209,41 @@ class Font:
         self.params.k_use_curve = value
 
     def set_size(self, size: int | None = None) -> None:
-        """K/font/mincho/index.ts:303 Mincho.setSize——委托 params 就地重算。"""
+        """K/font/mincho/index.ts:303 Mincho.setSize — delegates to params,
+        recomputed in place."""
         self.params.set_size(size)
 
     def get_drawers(self, items: list) -> list[Drawer]:
-        """K/font/mincho/index.ts:356 getDrawers 的管线版：一项一 drawer。"""
+        """The pipeline form of K/font/mincho/index.ts:356 getDrawers: one
+        drawer per item."""
         return [self._transform_drawer(it) if isinstance(it, TransformOp)
                 else self._stroke_drawer(it)
                 for it in items]
 
     def _transform_drawer(self, op: TransformOp) -> Drawer:
         def draw(outline: Outline) -> None:
-            # op.a3（源 a3_100）是 kind=99 的旋转档（1/2/3）；a2_opt/a3_opt
-            #（option 位）在 expansion 的 RawOp 通道不透传，保持默认 0
+            # op.a3 (source a3_100) is the kind=99 rotation level (1/2/3);
+            # a2_opt/a3_opt (the option bits) are not forwarded on expansion's
+            # RawOp channel and keep their default 0
             df_transform(outline, op.kind, op.x1, op.y1, op.x2, op.y2,
                          a3=op.a3)
         return draw
 
     def _stroke_drawer(self, stroke: RStroke) -> Drawer:
-        """占位：T8（Gothic dfDrawFont）/ T10（Mincho dfDrawFont + adjust
-        七连管）替换为真实笔画绘制。"""
+        """Placeholder: T8 (Gothic dfDrawFont) / T10 (Mincho dfDrawFont + the
+        seven-stage adjust pipeline) replace it with real stroke drawing."""
         def draw(outline: Outline) -> None:
             pass
         return draw
 
 
 class _StubFont(Font):
-    """T7 占位字体：params/管线/dfTransform 可用，笔画不画。
+    """T7 placeholder font: params/pipeline/dfTransform work, strokes are not
+    drawn.
 
-    设计为易替换：select_font 经 _FONTS 注册表分发，T8 把 K_GOTHIC 项
-    换成真实 Gothic（覆写 _stroke_drawer），T10 换 K_MINCHO。
+    Designed to be easy to replace: select_font dispatches through the _FONTS
+    registry, T8 swaps the K_GOTHIC entry for the real Gothic (overriding
+    _stroke_drawer) and T10 swaps K_MINCHO.
     """
 
 
@@ -231,9 +254,11 @@ _FONTS: dict[Shotai, type[Font]] = {
 
 
 def select_font(shotai: Shotai) -> Font:
-    """← K/font/index.ts:25-32 select()：按书体新建字体实例（每次新实例）。
-    注册表键即注入的 shotai——真实字体类（T8/T10）自带同名类属性，注入值
-    与之恒等，两种声明方式不冲突。"""
+    """← K/font/index.ts:25-32 select(): create a new font instance per shotai
+    (a fresh instance every time). The registry key is the shotai that gets
+    injected — the real font classes (T8/T10) carry a class attribute of the
+    same name, and the injected value is identical to it, so the two ways of
+    declaring it do not conflict."""
     try:
         cls = _FONTS[shotai]
     except (KeyError, TypeError):

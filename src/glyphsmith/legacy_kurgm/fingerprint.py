@@ -1,5 +1,6 @@
 # src/glyphsmith/legacy_kurgm/fingerprint.py
-"""golden 指纹：轮廓数 顶点数 sha1。哈希串格式逐字符镜像 KT/strokes.ts:153-172。"""
+"""Golden fingerprint: contour count, vertex count, sha1. The hash string format
+mirrors KT/strokes.ts:153-172 character for character."""
 from __future__ import annotations
 
 import hashlib
@@ -10,17 +11,21 @@ from glyphsmith.outline import Outline
 
 
 def js_num(v: float) -> str:
-    """ECMAScript Number::toString。
+    """ECMAScript Number::toString.
 
-    -0 → "0"；1e-6 ≤ |v| < 1e21 → 无指数十进制；其余 → JS 风格科学计数
-    （指数无前导零、正指数带 +）。一律基于 repr 的最短往返数字：切勿走
-    str(int(v)) 捷径——≥2^53 的 double 恒为整数，其精确二进制展开（如
-    9.999999999999999e20 → 999999999999999868928）与 JS 的最短数字
-    （999999999999999900000）不一致（node 实测对照修正）。
+    -0 → "0"; 1e-6 ≤ |v| < 1e21 → exponential-free decimal; otherwise → JS
+    style scientific notation (no leading zeros in the exponent, a + on
+    positive exponents). Always based on repr's shortest round-trip digits:
+    never take the str(int(v)) shortcut — a double ≥2^53 is always an integer,
+    and its exact binary expansion (e.g. 9.999999999999999e20 →
+    999999999999999868928) disagrees with JS's shortest digits
+    (999999999999999900000) (corrected by comparing against node).
 
-    非有限值 → "NaN"/"Infinity"/"-Infinity"（ECMAScript String() 字面量；
-    KT/strokes.ts 与桥接的模板串 `${p.x}` 同此）——退化 stretch 的 ±Inf
-    坐标 kurgm 照入指纹，此前 raise 会把这类字形打成 ERROR（T16 冒烟）。
+    Non-finite values → "NaN"/"Infinity"/"-Infinity" (the ECMAScript String()
+    literals; KT/strokes.ts and the bridge's template string `${p.x}` do the
+    same) — kurgm feeds the ±Inf coordinates of a degenerate stretch straight
+    into the fingerprint, and raising would have marked those glyphs ERROR (the
+    T16 smoke).
     """
     if math.isnan(v):
         return "NaN"
@@ -33,7 +38,8 @@ def js_num(v: float) -> str:
     d = Decimal(repr(float(v))).normalize()
     if 1e-6 <= abs(v) < 1e21:
         return format(d, "f")
-    # 科学计数分支：本域坐标实际不落入此区间，但实现完整以防 golden 意外
+    # scientific-notation branch: coordinates in this domain never actually
+    # land here, but it is implemented in full in case golden surprises us
     mantissa = d.copy_abs()
     adjusted = mantissa.adjusted()
     coeff = "".join(str(x) for x in mantissa.as_tuple().digits)

@@ -1,5 +1,5 @@
 # src/glyphsmith/legacy_kurgm/rstroke.py
-"""RStroke：K/stroke.ts 的忠实移植（渲染语义解码）。"""
+"""RStroke: a faithful port of K/stroke.ts (decoding the rendering semantics)."""
 from __future__ import annotations
 
 import math
@@ -8,17 +8,21 @@ from .geom2d import is_cross, is_cross_box, js_div, js_floor, js_max, js_min
 
 
 def _js_mod(a: int, b: int) -> int:
-    """JS `%` 语义：截断余数（符号随被除数）= math.fmod；Python 原生 `%` 是
-    floor 余数（符号随除数），二者仅在被除数非负或整除（余 0）时一致。
-    对真实引擎（kurgm stroke.ts，node 直跑）的 3500 例对照 fuzz 确认负 a2
-    下二者不同（a2=-1505 → JS 余 -5 / Python 余 95；a2_opt=-15 → JS opt_1=-5 /
-    Python 5），故按 JS 语义实现（简报预案：暴露差异即改 fmod）。"""
+    """JS `%` semantics: truncated remainder (sign follows the dividend) =
+    math.fmod; Python's native `%` is a floor remainder (sign follows the
+    divisor), and the two agree only when the dividend is non-negative or the
+    division is exact (remainder 0). A 3500-case differential fuzz against the
+    real engine (kurgm stroke.ts, run directly under node) confirmed that the
+    two differ for negative a2 (a2=-1505 → JS remainder -5 / Python 95;
+    a2_opt=-15 → JS opt_1=-5 / Python 5), so JS semantics are implemented here
+    (the brief's contingency: expose the difference and switch to fmod)."""
     return int(math.fmod(a, b))
 
 
 def stretch(dp: int, sp: int, p: int, mn: int, mx: int) -> int:
-    """K/stroke.ts:3-20。除法/floor 走 JS 语义（0 除数 → ±Inf/NaN 穿透，
-    NaN 坐标的多边形由 push_polygon 丢弃——T16 全量闭包冒烟 119 字形）。"""
+    """K/stroke.ts:3-20. Division/floor use JS semantics (a 0 divisor → ±Inf/NaN
+    passes through, and polygons with NaN coordinates are dropped by
+    push_polygon — the T16 full closure smoke found 119 such glyphs)."""
     if p < sp + 100:
         p1, p3, p2, p4 = mn, mn, sp + 100, dp + 100
     else:
@@ -27,7 +31,7 @@ def stretch(dp: int, sp: int, p: int, mn: int, mx: int) -> int:
 
 
 class RStroke:
-    """kurgm Stroke 类：a1/a2/a3 十进制位域分解 + 几何。"""
+    """kurgm's Stroke class: decimal bitfield decomposition of a1/a2/a3 + geometry."""
 
     def __init__(self, a1_100: int, a2_100: int, a3_100: int,
                  x1: float, y1: float, x2: float, y2: float,
@@ -35,8 +39,10 @@ class RStroke:
         self.a1_100, self.a2_100, self.a3_100 = a1_100, a2_100, a3_100
         self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
         self.x3, self.y3, self.x4, self.y4 = x3, y3, x4, y4
-        # 分解（K/stroke.ts:62-74）。余数一律走 _js_mod（JS 截断余数语义，
-        # 见其 docstring）；Math.floor 与 Python math.floor 同为向负无穷，直用。
+        # decomposition (K/stroke.ts:62-74). Remainders always go through
+        # _js_mod (JS truncated-remainder semantics, see its docstring);
+        # Math.floor and Python math.floor both round towards negative
+        # infinity, so they are used directly.
         self.a1_opt = math.floor(self.a1_100 / 100); self.a1_100 = _js_mod(self.a1_100, 100)
         self.a2_opt = math.floor(self.a2_100 / 100); self.a2_100 = _js_mod(self.a2_100, 100)
         self.a2_opt_1 = _js_mod(self.a2_opt, 10)
@@ -54,10 +60,11 @@ class RStroke:
                    pts[2][0], pts[2][1], pts[3][0], pts[3][1])
 
     def get_control_segments(self):
-        # K/stroke.ts:77-101（switch fall-through 展开）。源 case 组：
-        #   0/8/9 → break（无段）；6/7 → x3x4 后 fall-through；
-        #   2/12/3/4 → x2x3 后 fall-through；default → 仅 x1x2。
-        # 修正说明：简报展开漏写 case 12（源码 92 行），已按源补上。
+        # K/stroke.ts:77-101 (the switch fall-through unrolled). Source case
+        # groups: 0/8/9 → break (no segment); 6/7 → fall through after x3x4;
+        # 2/12/3/4 → fall through after x2x3; default → x1x2 only.
+        # Correction note: the brief's unrolling omitted case 12 (source line
+        # 92); restored from the source.
         res = []
         a1 = self.a1_100 if self.a1_opt == 0 else 1
         if a1 in (6, 7):
@@ -82,33 +89,38 @@ class RStroke:
         self.y1 = stretch(sy, sy2, self.y1, bmin_y, bmax_y)
         self.x2 = stretch(sx, sx2, self.x2, bmin_x, bmax_x)
         self.y2 = stretch(sy, sy2, self.y2, bmin_y, bmax_y)
-        if not (self.a1_100 == 99 and self.a1_opt == 0):   # 源码标注 always true
+        if not (self.a1_100 == 99 and self.a1_opt == 0):   # source annotates this "always true"
             self.x3 = stretch(sx, sx2, self.x3, bmin_x, bmax_x)
             self.y3 = stretch(sy, sy2, self.y3, bmin_y, bmax_y)
             self.x4 = stretch(sx, sx2, self.x4, bmin_x, bmax_x)
             self.y4 = stretch(sy, sy2, self.y4, bmin_y, bmax_y)
 
     def get_box(self):
-        # K/stroke.ts:130-163（switch fall-through 展开）。源码 default 标签
-        # 在最前，文本顺序 default 体 → case 2/3/4 体 → case 1/99 体 → case 0：
-        #   default 入口（a1∉{0,1,2,3,4,99}，含 6/7）→ x4、x3、x1x2 全含；
-        #   case 2/3/4 → x3 + x1x2；case 1/99 → 仅 x1x2；case 0 → 空。
-        # 修正说明：简报展开把 x3/x1x2 的覆盖写成 a1∈{2,3,4,6,7}/{1,2,3,4,6,7,99}，
-        # 漏掉 default 的 fall-through 覆盖面（如 a1=5/8/9），已按源改为
-        # x4 ⟺ a1∉{0,1,2,3,4,99}；x3 ⟺ a1∉{0,1,99}；x1x2 ⟺ a1≠0。
+        # K/stroke.ts:130-163 (the switch fall-through unrolled). The source's
+        # default label comes first, and the textual order is default body →
+        # case 2/3/4 body → case 1/99 body → case 0:
+        #   default entry (a1∉{0,1,2,3,4,99}, including 6/7) → x4, x3 and x1x2
+        #     are all included;
+        #   case 2/3/4 → x3 + x1x2; case 1/99 → x1x2 only; case 0 → empty.
+        # Correction note: the brief's unrolling wrote the x3/x1x2 coverage as
+        # a1∈{2,3,4,6,7}/{1,2,3,4,6,7,99}, missing the default fall-through
+        # coverage (e.g. a1=5/8/9); restored from the source to
+        # x4 ⟺ a1∉{0,1,2,3,4,99}; x3 ⟺ a1∉{0,1,99}; x1x2 ⟺ a1≠0.
         inf = float("inf")
         min_x, min_y, max_x, max_y = inf, inf, -inf, -inf
         a1 = self.a1_100 if self.a1_opt == 0 else 6
-        # min/max 走 JS 语义（NaN 传染，K/stroke.ts Math.min/max）——退化
-        # stretch 的 NaN 坐标须把 box 染成 NaN，进而让外层 stretch 全 NaN
-        # （多边形由 push 丢弃）；Python min 会静默丢弃 NaN 保有限值。
-        if a1 not in (0, 1, 2, 3, 4, 99):   # default 入口（含 x4）
+        # min/max use JS semantics (NaN contagion, K/stroke.ts Math.min/max) —
+        # the NaN coordinates of a degenerate stretch must infect the box with
+        # NaN, which in turn makes the outer stretch all NaN (the polygon is
+        # dropped by push); Python's min would silently drop the NaN and keep a
+        # finite value.
+        if a1 not in (0, 1, 2, 3, 4, 99):   # default entry (includes x4)
             min_x, max_x = js_min(min_x, self.x4), js_max(max_x, self.x4)
             min_y, max_y = js_min(min_y, self.y4), js_max(max_y, self.y4)
-        if a1 not in (0, 1, 99):            # case 2/3/4 体 + default fall-through
+        if a1 not in (0, 1, 99):            # case 2/3/4 body + default fall-through
             min_x, max_x = js_min(min_x, self.x3), js_max(max_x, self.x3)
             min_y, max_y = js_min(min_y, self.y3), js_max(max_y, self.y3)
-        if a1 != 0:                         # case 1/99 体 + 上游 fall-through
+        if a1 != 0:                         # case 1/99 body + upstream fall-through
             min_x, max_x = js_min(js_min(min_x, self.x1), self.x2), \
                 js_max(js_max(max_x, self.x1), self.x2)
             min_y, max_y = js_min(js_min(min_y, self.y1), self.y2), \

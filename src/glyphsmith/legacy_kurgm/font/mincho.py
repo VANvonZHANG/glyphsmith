@@ -1,23 +1,30 @@
 # src/glyphsmith/legacy_kurgm/font/mincho.py
-"""MinchoFont：K/font/mincho/index.ts 的 adjustStrokes 七连管（T9）。
+"""MinchoFont: the seven-stage adjustStrokes pipeline of
+K/font/mincho/index.ts (T9).
 
-明朝体「看邻居笔画」的书法规则核心——渲染前先对全字每笔算六个调整量
-（跳ね/曲げ/縦/踵/鱗×2/切り口），再交给 cd 表画。七连管顺序固定不可换
-（index.ts:385-391，uroko2 依赖 uroko 的结果做 isTarget 判定）：
+The core of mincho's "look at the neighbouring strokes" calligraphic rules —
+before rendering, six adjustment quantities are computed for every stroke in
+the glyph (hane/mage/tate/kakato/uroko×2/kirikuchi), and only then is the
+stroke handed to the cd tables to draw. The seven-stage order is fixed and may
+not be reordered (index.ts:385-391; uroko2 depends on uroko's result for its
+isTarget test):
 
   adjustHane → adjustMage → adjustTate → adjustKakato
   → adjustUroko → adjustUroko2 → adjustKirikuchi
 
-移植对应源段（逐行）：Hane :395-440 / Mage :442-481 / Tate :483-511 /
-Kakato :513-536 / Uroko :538-564 / Uroko2 :566-609 / Kirikuchi :611-634；
-打包初值 :370-383；骨架 :363-393；getDrawers :356-360。参数表（kAdjust*
-等）从 T7 FontParams 取（已逐字段抄源 :303-353）。几何判定用 RStroke 的
-is_cross/is_cross_box（T4）。dfDrawFont（:88-221 的 switch(a1_100) 分发）
-已随 T10 落地：本模块 df_draw_font 直译分发，mincho/cd.ts 的 cdDraw*
-表在 mincho_cd.py（golden m: 子集 3240/3240 绿）。
+Corresponding source ranges (line by line): Hane :395-440 / Mage :442-481 /
+Tate :483-511 / Kakato :513-536 / Uroko :538-564 / Uroko2 :566-609 /
+Kirikuchi :611-634; packed initial values :370-383; skeleton :363-393;
+getDrawers :356-360. The parameter tables (kAdjust* etc.) come from T7
+FontParams (already copied field by field from source :303-353). Geometry tests
+use RStroke's is_cross/is_cross_box (T4). dfDrawFont (the switch(a1_100)
+dispatch at :88-221) landed with T10: this module's df_draw_font translates that
+dispatch directly, and mincho/cd.ts's cdDraw* tables live in mincho_cd.py (the
+golden m: subset is 3240/3240 green).
 
-Gothic 对照（T8 结论）：Gothic 覆写 getDrawers 直接画原始 Stroke，
-完全跳过 adjustStrokes——七连管是 Mincho 专用。
+Contrast with gothic (the T8 finding): gothic overrides getDrawers to draw the
+raw Stroke directly, skipping adjustStrokes entirely — the seven-stage pipeline
+is mincho-only.
 """
 from __future__ import annotations
 
@@ -29,29 +36,33 @@ from ..expansion import TransformOp
 from ..geom2d import _round
 from ..rstroke import RStroke
 from .base import Drawer, Font, Shotai
-from .gothic_cd import _hypot, normalize   # K/util.ts；共享工具留在 gothic_cd（T10 决策）
+from .gothic_cd import _hypot, normalize   # K/util.ts; shared utils stay in gothic_cd (T10)
 from .mincho_cd import cd_draw_bezier, cd_draw_curve, cd_draw_line
 
 
 class MinchoAdjustedStroke(RStroke):
-    """index.ts:10-26 MinchoAdjustedStroke 的镜像。
+    """Mirror of index.ts:10-26 MinchoAdjustedStroke.
 
-    TS 是含 `readonly stroke: Stroke` 引用的接口（组合）；按 T9 简报做成
-    RStroke 子类（继承）：adj.a1_100 等即源的 adjStroke.stroke.a1_100，
-    T10 的 df_draw_font 直接在 adj 上取笔画字段与六个调整量。
+    In TS this is an interface holding a `readonly stroke: Stroke` reference
+    (composition); per the T9 brief it is made a subclass of RStroke
+    (inheritance): adj.a1_100 etc. is the source's adjStroke.stroke.a1_100, and
+    T10's df_draw_font reads the stroke fields and the six adjustment
+    quantities straight off adj.
 
-    六个字段 = 源 :370-383 的 100s/1000s 位打包改写通道（初值来自 a2/a3
-    的 option 位分解，各 adjust 函数在其上累加/覆写）：
-    - a2 的 100s 位 kirikuchiAdjustment（2:32 时）；1000s 位 tateAdjustment
-      （{1,3,7} 竖，opt_2 + opt_3*10 打包）；
-    - a3 的 100s 位 haneAdjustment（{1,2,6}::04）/ urokoAdjustment（1::00）/
-      kakatoAdjustment（1::{13,23}）；1000s 位 mageAdjustment（3）。
+    The six fields = the source's :370-383 packed 100s/1000s bit rewrite
+    channel (initial values come from decomposing a2/a3's option bits; each
+    adjust function accumulates onto or overwrites them):
+    - a2's 100s bit kirikuchiAdjustment (when 2:32); 1000s bit tateAdjustment
+      ({1,3,7} vertical, packed as opt_2 + opt_3*10);
+    - a3's 100s bit haneAdjustment ({1,2,6}::04) / urokoAdjustment (1::00) /
+      kakatoAdjustment (1::{13,23}); 1000s bit mageAdjustment (3).
     """
 
     def __init__(self, stroke: RStroke) -> None:
-        # 展开管线产物（可能已被 apply_stretch/affine 改写坐标）整体过户
+        # take over the expansion pipeline's product wholesale (its
+        # coordinates may already have been rewritten by apply_stretch/affine)
         self.__dict__.update(stroke.__dict__)
-        # index.ts:370-383 打包初值
+        # index.ts:370-383 packed initial values
         self.kirikuchi_adjustment: int = stroke.a2_opt_1
         self.tate_adjustment: int = stroke.a2_opt_2 + stroke.a2_opt_3 * 10
         self.hane_adjustment: int = stroke.a3_opt_1
@@ -62,12 +73,14 @@ class MinchoAdjustedStroke(RStroke):
 
 def df_draw_font(font: "MinchoFont", outline: Outline,
                  adj_stroke: MinchoAdjustedStroke) -> None:
-    """mincho/index.ts:88-221 dfDrawFont——switch(a1_100) 逐案分发到
-    mincho/cd.ts（mincho_cd.cd_draw_*）。
+    """mincho/index.ts:88-221 dfDrawFont — switch(a1_100) dispatches case by
+    case to mincho/cd.ts (mincho_cd.cd_draw_*).
 
-    参数传递铁律：cdDrawCurve 的 opt1/opt3 通道 = tateAdjustment 的
-    `% 10` 与 `Math.floor(/10)` 拆分（T9 移交要点 1）；六调整量直接取
-    MinchoAdjustedStroke 字段。JS `%` → math.fmod（截断余数语义）。
+    Hard rule for argument passing: cdDrawCurve's opt1/opt3 channels are the
+    `% 10` and `Math.floor(/10)` split of tateAdjustment (T9 handover point 1);
+    the six adjustment quantities are read directly off the
+    MinchoAdjustedStroke fields. JS `%` → math.fmod (truncated-remainder
+    semantics).
     """
     st = adj_stroke
     p = font.params
@@ -201,7 +214,7 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
                       1, a3_100, int(math.fmod(tate, 10)), a3_opt_1,
                       math.floor(tate / 10), a3_opt_2)
     elif a1_100 == 9:
-        pass    # may not be exist（源注释；kageCanvas 旧代码已注释）
+        pass    # may not be exist (source comment; old kageCanvas code commented out)
     elif a1_100 == 12:
         cd_draw_curve(font, outline, x1, y1, x2, y2, x3, y3,
                       a2_100 + a2_opt_1 * 100, 1, a2_opt_2, 0, a2_opt_3, 0)
@@ -209,16 +222,19 @@ def df_draw_font(font: "MinchoFont", outline: Outline,
 
 
 class MinchoFont(Font):
-    """明朝体。← K/font/mincho/index.ts:224-635 Mincho（参数表/setSize 在
-    T7 基座；本类携带 adjust 七连管与 Mincho 版 getDrawers 分发）。"""
+    """Mincho. ← K/font/mincho/index.ts:224-635 Mincho (the parameter
+    tables/setSize live in the T7 base; this class carries the seven-stage
+    adjust pipeline and the Mincho getDrawers dispatch)."""
 
     shotai = Shotai.K_MINCHO
 
     # ── index.ts:356-360 getDrawers ────────────────────────────
     def get_drawers(self, items: list) -> list[Drawer]:
-        """Mincho 版：先全字 adjust（邻居感知，须一次性看全部笔画），再逐项
-        分发——TransformOp（0:97/98/99 行）沿用基座 df_transform 通道，
-        MinchoAdjustedStroke 进 df_draw_font（T10 前为 no-op 占位）。"""
+        """Mincho version: adjust the whole glyph first (neighbour-aware, it
+        must see every stroke at once), then dispatch item by item —
+        TransformOp (lines 0:97/98/99) uses the base df_transform channel, and
+        MinchoAdjustedStroke goes to df_draw_font (a no-op placeholder before
+        T10)."""
         return [self._transform_drawer(it) if isinstance(it, TransformOp)
                 else self._mincho_stroke_drawer(it)
                 for it in self.adjust_strokes(items)]
@@ -230,12 +246,16 @@ class MinchoFont(Font):
 
     # ── index.ts:363-393 adjustStrokes ─────────────────────────
     def adjust_strokes(self, items: list) -> list:
-        """打包初值构造 + 七连管依序执行（顺序不可换，:385-391）。
+        """Build the packed initial values, then run the seven-stage pipeline in
+        order (the order may not be changed, :385-391).
 
-        items 是 expand() 的产物（RStroke | TransformOp 混合）。源中 0:97/98/99
-        行是 a1_100=0 的 Stroke：七函数的目标/邻居条件全不匹配、getControlSegments
-        对 a1=0 返回空（isCross/isCrossBox 恒 False），对 adjust 全惰性——本仓库
-        该行是 TransformOp（T7 通道），原样透传、不进七函数，行为与源逐点一致。
+        items is the product of expand() (a mix of RStroke | TransformOp). In
+        the source, lines 0:97/98/99 are Strokes with a1_100=0: every target/
+        neighbour condition in the seven functions fails to match,
+        getControlSegments returns empty for a1=0 (isCross/isCrossBox are always
+        False), so they are wholly inert to adjust — in this repo those lines
+        are TransformOp (the T7 channel), passed through as-is and never
+        entering the seven functions, point-for-point identical to the source.
         """
         adjusted: list = []
         for it in items:
@@ -251,7 +271,7 @@ class MinchoFont(Font):
         self._adjust_kirikuchi(strokes)   # :391
         return adjusted
 
-    # ── :395-440 adjustHane（跳ね：笔末钩的大小看左侧近竖）─────
+    # ── :395-440 adjustHane (hane: tail-hook size looks at the left vertical) ──
     def _adjust_hane(self, adj_strokes: list[MinchoAdjustedStroke]
                      ) -> list[MinchoAdjustedStroke]:
         vert_segments = []            # {stroke, x, y1, y2}
@@ -273,7 +293,7 @@ class MinchoFont(Font):
                     lpx, lpy = st.x4, st.y4
                 mn = math.inf        # mostNear
                 if lpx + 18 < 100:
-                    mn = lpx + 18    # 怪点：无近竖时以 lpx+18 当虚拟墙（照抄）
+                    mn = lpx + 18    # quirk: no nearby vertical → lpx+18 is a wall (copied)
                 for st2, x, y1, y2 in vert_segments:
                     if st is not st2 \
                             and lpx - x < 100 and x < lpx \
@@ -283,7 +303,7 @@ class MinchoFont(Font):
                     adj.hane_adjustment += 7 - math.floor(mn / 15)
         return adj_strokes
 
-    # ── :442-481 adjustMage（曲げ：折れ横段近旁有横则后半变细）─
+    # ── :442-481 adjustMage (mage: latter half thins if a horizontal is beside) ──
     def _adjust_mage(self, adj_strokes: list[MinchoAdjustedStroke]
                      ) -> list[MinchoAdjustedStroke]:
         hori_segments = []           # {stroke, adjStroke, isTarget, y, x1, x2}
@@ -306,7 +326,7 @@ class MinchoFont(Font):
                             adj.mage_adjustment = self.params.k_adjust_mage_step
         return adj_strokes
 
-    # ── :483-511 adjustTate（縦：平行近竖互相提示变细档）────────
+    # ── :483-511 adjustTate (tate: parallel verticals raise thinning level) ──
     def _adjust_tate(self, adj_strokes: list[MinchoAdjustedStroke]
                      ) -> list[MinchoAdjustedStroke]:
         vert_segments = []           # {stroke, adjStroke, x, y1, y2}
@@ -323,14 +343,14 @@ class MinchoFont(Font):
                         < self.params.k_min_width_t * self.params.k_adjust_tate_step:
                     adj.tate_adjustment += self.params.k_adjust_tate_step \
                         - math.floor(abs(x - other_x) / self.params.k_min_width_t)
-                    # JS && 优先于 ||：A > S || (A === S && (opt_1≠0 || a2_100≠0))
+                    # JS && binds tighter than ||: A > S || (A === S && (opt_1≠0 || a2_100≠0))
                     if adj.tate_adjustment > self.params.k_adjust_tate_step \
                             or (adj.tate_adjustment == self.params.k_adjust_tate_step
                                 and (st.a2_opt_1 != 0 or st.a2_100 != 0)):
                         adj.tate_adjustment = self.params.k_adjust_tate_step
         return adj_strokes
 
-    # ── :513-536 adjustKakato（踵：竖脚下有横穿/贴基线则缩短）──
+    # ── :513-536 adjustKakato (kakato: a crossing/touching horizontal shortens it) ──
     def _adjust_kakato(self, adj_strokes: list[MinchoAdjustedStroke]
                        ) -> list[MinchoAdjustedStroke]:
         p = self.params
@@ -353,7 +373,7 @@ class MinchoFont(Font):
                         break
         return adj_strokes
 
-    # ── :538-564 adjustUroko（鱗：末端被穿/笔画短则收缩）────────
+    # ── :538-564 adjustUroko (uroko: shrink if the end is crossed or it is short) ──
     def _adjust_uroko(self, adj_strokes: list[MinchoAdjustedStroke]
                       ) -> list[MinchoAdjustedStroke]:
         p = self.params
@@ -384,7 +404,7 @@ class MinchoFont(Font):
                         break
         return adj_strokes
 
-    # ── :566-609 adjustUroko2（鱗其二：按平行横线密度收缩）──────
+    # ── :566-609 adjustUroko2 (uroko #2: shrink by parallel-horizontal density) ──
     def _adjust_uroko2(self, adj_strokes: list[MinchoAdjustedStroke]
                        ) -> list[MinchoAdjustedStroke]:
         p = self.params
@@ -395,7 +415,7 @@ class MinchoFont(Font):
                 hori_segments.append(
                     (adj, st,
                      st.a3_100 == 0 and st.a3_opt == 0
-                     and adj.uroko_adjustment == 0,     # 依赖 _adjust_uroko 先跑
+                     and adj.uroko_adjustment == 0,     # depends on _adjust_uroko running first
                      st.y1, st.x1, st.x2))
             elif st.a1_100 == 3 and st.a1_opt == 0 and st.y2 == st.y3:
                 hori_segments.append((adj, st, False, st.y2, st.x2, st.x3))
@@ -407,13 +427,14 @@ class MinchoFont(Font):
                             and not (x1 + 1 > other_x2 or x2 - 1 < other_x1) \
                             and _round(abs(y - other_y)) < p.k_adjust_uroko2_length:
                         pressure += (p.k_adjust_uroko2_length - abs(y - other_y)) ** 1.1
-                # 源此处留有被注释掉的 `if (stroke.a3 < result)` 包裹，照抄现行赋值
+                # the source keeps a commented-out `if (stroke.a3 < result)`
+                # wrapper here; current assignment copied as-is
                 adj.uroko_adjustment = min(
                     math.floor(pressure / p.k_adjust_uroko2_length),
                     p.k_adjust_uroko2_step)
         return adj_strokes
 
-    # ── :611-634 adjustKirikuchi（切り口：2:32 起笔落在横上换切角）─
+    # ── :611-634 adjustKirikuchi (kirikuchi: a 2:32 start on a horizontal switches cut) ──
     def _adjust_kirikuchi(self, adj_strokes: list[MinchoAdjustedStroke]
                           ) -> list[MinchoAdjustedStroke]:
         hori_segments = []           # {y, x1, x2}
