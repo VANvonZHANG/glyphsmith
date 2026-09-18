@@ -47,7 +47,7 @@ stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
 
 | 后端 | 定位 |
 | --- | --- |
-| `legacy-kurgm` | kurgm/kage-engine 忠实移植：golden 矩阵 7614/7614 指纹全等（宋/黑 × 直线/曲线 × 头尾型），真实 dump 1000 例与 Node 原版指纹全等（白名单缺口字形已透明排除） |
+| `legacy-kurgm` | kurgm/kage-engine 忠实移植：golden 矩阵 7614/7614 指纹全等（宋/黑 × 直线/曲线 × 头尾型），真实 dump 1000 例与 Node 原版指纹全等；旧「白名单缺口」字形 1,523 例专项对拍 1,522 例全等（修复见下，唯一残差为源数据 `116p` 坐标笔误） |
 | `pen-minimal` | 等宽描边骨架预览（Levien 词汇最小子集），验证 Backend 协议的通用性；v2 变宽 pen 后端见 `docs/pen-backend-design.md` |
 
 两者经同一 `Backend` 协议注册（`gsrender.protocol.get_backend`），CLI
@@ -84,11 +84,25 @@ both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双�
 
 冒烟抓出并已修复的移植缺口（共 241 字形，204 例与 kurgm Node 指纹全等）：
 
-**全库口径披露（白名单外线种）**：全库约 1,552 字形含白名单外线种行
-（`101:`/`102:`/`103:` 等 a1_opt 变体及非整数坐标行），其中约 888 例渲染
-与 kurgm 有差（这些行被 gsf 解析层降级 RawOp 跳过并发逐行 warning）；
-属 gsftool 解析侧限制，修复已排队 gsftool 仓库。冒烟口径中被排除的
-37 例闭包缺口即属此类。
+**旧「白名单缺口」已修复（gsftool `2c5dea2`，2026-09-18）**：此前 gsf 解析层
+用字面线种白名单 `{"1","2","3","4","6","7"}`，把 `101:`/`102:`/`103:`/`106:`/
+`107:` 等 a1 位域行（kurgm 拆 a1_100/a1_opt 照画）与部分畸形行降级 RawOp、
+渲染时跳过并发逐行 warning——全库 1,523 字形受影响（约 2,575 条行），其中
+1,514 例与 kurgm 指纹有差。修复后这些行是合法 Stroke（全库 RawOp 计数
+321,370 → 319,940 字形 / 14.399%），`scripts/audit_gap_glyphs.py` 全量对拍
+1,523 例：**修复前 1,514 NEQ → 修复后 1 NEQ**。
+
+唯一残差 `hkcs_m730b-p01-s00` 源于源数据坐标笔误（`2:7:8:…:77:116p`）：
+kurgm 把 `116p` 当 NaN 参与笔画绘制、我们按垃圾行跳过整条笔画，修复前后
+同为此差异（非本次回归，仅 1 字形、零渲染影响；把 `116p` 改成 `116` 后
+两侧 30 轮廓 283 点指纹全等）。全库残余 9 条畸形行（`999:` 伪引用 / `116p`
+笔误 / `-1:0:0:0` 四列行 / `1:0:` 截断行）清单见
+`scripts/audit_gap_glyphs.py::KNOWN_RESIDUAL_GLYPHS`。
+
+T12/T16 口径下曾从交叉对拍中排除的缺口字形（闭包侧 36 例，含 `hkcs_m31184`
+与 35 例引用垃圾行字形的 `lp_*`/`hs_*`、self-snapshot 侧
+`simch-supercjk_u32501-k`）已随修复全部回归全量比对并全等（闭包 120/120、
+self-snapshot 94/94）。
 
 - `push_polygon`：Python `math.floor(NaN)` 抛异常（27 字形）；
 - self@N 历史快照自引用被 @版本兜底成假环（94 字形）；
