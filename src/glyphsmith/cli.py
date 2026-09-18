@@ -45,9 +45,10 @@ def _safe_filename(name: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="glyphsmith", description="GSF 字形渲染器：stdout 单行 JSON 契约，agent 原生")
+        prog="glyphsmith",
+        description="GSF glyph renderer: a one-line JSON contract on stdout, agent-native")
     p.add_argument("--corpus", default="glyphwiki-newest.gsf",
-                   help="语料：GSF 文本文件或 GlyphWiki dump_newest_only.txt")
+                   help="corpus: a GSF text file or a GlyphWiki dump_newest_only.txt")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def sp(name, help):
@@ -57,32 +58,32 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--corpus", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         return s
 
-    r = sp("render", "渲染单个字形（--out svg|png|outline.json）")
+    r = sp("render", "render one glyph (--out svg|png|outline.json)")
     r.add_argument("name")
     r.add_argument("--backend", default="legacy-kurgm",
-                   help="legacy-kurgm|pen-minimal|both（both=双后端并渲对比）")
+                   help="legacy-kurgm|pen-minimal|both (both = render with both backends)")
     r.add_argument("--font", default="mincho",
-                   help="serif|mincho / sans|gothic（FONT_ALIAS 换算）")
+                   help="serif|mincho or sans|gothic (resolved via FONT_ALIAS)")
     r.add_argument("--out", default="svg", choices=["svg", "png", "outline.json"])
-    rs = sp("resolve", "ref 依赖闭包：closure / dangling / depth")
+    rs = sp("resolve", "ref dependency closure: closure / dangling / depth")
     rs.add_argument("name")
-    ins = sp("inspect", "字形解剖：ops 计数 + 名字 meta")
+    ins = sp("inspect", "glyph anatomy: op counts + name meta")
     ins.add_argument("name")
-    ls = sp("list", "语料检索（--src/--char/--like 前缀）")
+    ls = sp("list", "corpus search (--src/--char/--like prefix)")
     ls.add_argument("--src"); ls.add_argument("--char"); ls.add_argument("--like")
-    smp = sp("sample", "可复现随机抽样（--seed 定 rng）")
+    smp = sp("sample", "reproducible random sample (--seed seeds the rng)")
     smp.add_argument("--n", type=int, default=10); smp.add_argument("--seed", type=int, default=1)
-    cmp_ = sp("compare", "两字形 IoU + 逐笔结构 diff")
+    cmp_ = sp("compare", "two glyphs: raster IoU + per-stroke structural diff")
     cmp_.add_argument("a"); cmp_.add_argument("b")
     cmp_.add_argument("--backend", default="legacy-kurgm")
     cmp_.add_argument("--font", default="mincho")
-    b = sp("batch", "整库批量渲染 → outdir/<字形名>.svg（multiprocessing）")
-    b.add_argument("--out", required=True, help="输出目录")
+    b = sp("batch", "batch-render a whole corpus -> outdir/<glyph-name>.svg (multiprocessing)")
+    b.add_argument("--out", required=True, help="output directory")
     b.add_argument("--backend", default="legacy-kurgm")
     b.add_argument("--workers", type=int, default=4)
     b.add_argument("--dump", action="store_true",
-                   help="语料为 GlyphWiki dump_newest_only.txt"
-                        "（缺省自动识别：首行含 '|' 且非 gsf/ 头）")
+                   help="corpus is a GlyphWiki dump_newest_only.txt"
+                        " (otherwise auto-detected: first line contains '|' and is not a gsf/ header)")
     return p
 
 
@@ -314,15 +315,15 @@ def main(argv: list[str] | None = None) -> None:
                                 # 仅其一）统一 exit 2 + JSON，不再 raw traceback
         _fail(2, f"cannot open corpus {args.corpus}: {e}",
               hints=[{"action": "glyphsmith list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
-                      "reason": "用 --corpus 指定语料文件"}])
+                      "reason": "point --corpus at the corpus file"}])
     except UnknownGlyphError as e:
         _fail(3, str(e), hints=[
             {"action": f"glyphsmith list --corpus {args.corpus} --like '{e.name[:4]}*'",
-             "reason": "检查拼写或变体"}])
+             "reason": "check the spelling or the variant"}])
     except CycleError as e:
         _fail(4, "cycle: " + " -> ".join(e.path), hints=[
             {"action": f"glyphsmith resolve --corpus {args.corpus} {e.path[0]}",
-             "reason": "环路径见 data.error；语料需修环后重试"}])
+             "reason": "cycle path is in data.error; fix the cycle in the corpus and retry"}])
     _emit("ok", data, warnings=warnings)
     sys.exit(0)                        # 成功也走 SystemExit（code=0），契约可预测
 
