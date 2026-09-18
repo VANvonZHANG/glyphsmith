@@ -89,8 +89,12 @@ both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双�
 `107:` 等 a1 位域行（kurgm 拆 a1_100/a1_opt 照画）与部分畸形行降级 RawOp、
 渲染时跳过并发逐行 warning——全库 1,523 字形受影响（约 2,575 条行），其中
 1,514 例与 kurgm 指纹有差。修复后这些行是合法 Stroke（全库 RawOp 计数
-321,370 → 319,940 字形 / 14.399%），`scripts/audit_gap_glyphs.py` 全量对拍
+321,370 → 319,939 字形 / 14.399%），`scripts/audit_gap_glyphs.py` 全量对拍
 1,523 例：**修复前 1,514 NEQ → 修复后 1 NEQ**。
+
+（RawOp 计数口径：按真实记录数 2,221,895 统计，与全量冒烟同口径。裸行扫描
+会多 1——dump 表头伪记录 `name|related|data` 的第三列文本 `data` 被当成字形
+数据解析出一条 RawOp。）
 
 唯一残差 `hkcs_m730b-p01-s00` 源于源数据坐标笔误（`2:7:8:…:77:116p`）：
 kurgm 把 `116p` 当 NaN 参与笔画绘制、我们按垃圾行跳过整条笔画，修复前后

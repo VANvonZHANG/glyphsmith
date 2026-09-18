@@ -7,8 +7,8 @@ split_residual_junk(): 把样本按「是否含残余垃圾行」拆成 (clean, 
 
 口径沿革：gsftool `2c5dea2` 之前这里过滤的是「白名单缺口」（字面线种白名单
 {"1","2","3","4","6","7"} 之外的全部整数首列行，含 101/103 等 a1 位域行，
-约 1,514 个字形）。修复后 a1 位域行是合法 Stroke，过滤自然收窄为真正的
-残余垃圾行——首列仍可 int 化、却因笔画字段守卫不满足被我们降级 RawOp 的行
+约 1,514 个字形）。修复后 a1 位域行是合法 Stroke，过滤收窄为真正的残余垃圾行
+——首列可 int 化 ∉ {0,99}、却因笔画字段守卫不满足被我们降级 RawOp 的行
 （全库实测 9 条：999 伪引用 / 116p 坐标笔误 / -1:0:0:0 四列行 / 截断行），
 这类行 kurgm 会当笔画解释、我们跳过，属两侧语义固有差异。
 """
@@ -46,15 +46,17 @@ def _int_like(s: str) -> bool:
 def split_residual_junk(cases: list) -> tuple:
     """按「含残余垃圾行」拆分样本 → (clean, excluded)。
 
-    判定口径 = 解析后 ops 里有无 cols[0] 形如整数的 RawOp。这类行在
-    「raw parse + expand」对比口径下两侧解释不同，产生与移植质量无关的
-    假 mismatch。两族：
-      * 真垃圾行（全库 9 条）：笔画字段守卫不满足——`2:...:116p` 坐标笔误、
-        `1:0:`/`1:0`/`1` 截断行、`-1:0:0:0` 四列行、`999:...:名字` 伪引用。
-        kurgm 按笔画解释（NaN 坐标），我们跳过。
-      * `0:` 行：kurgm 侧桥接会施加 0:97/98/99 变换，而本对比口径不接
-        gsrender 的 RawOp→TransformOp 通道；纯 `0` 行两侧都是空操作。
-    两条均只影响对拍口径，不影响渲染保真结论。
+    残余垃圾行 = 首列可 int 化 ∉ {0,99}、却在 gsf.kage2 里落成 RawOp 的行
+    （笔画字段守卫不满足）：`2:...:116p` 坐标笔误、`1:0:`/`1:0`/`1` 截断行、
+    `-1:0:0:0` 四列行、`999:...:名字` 伪引用——全库实测 9 条。这类行 kurgm
+    当笔画解释（NaN 坐标）、我们跳过，产生与移植质量无关的假 mismatch。
+
+    口径沿革（复审修正）：T12 时代此过滤还排除 `0:` 行（保守假设「0 行另有
+    通道、两侧不接」）。该机制陈述已被证伪：`0:` 行两侧同判——kage
+    `kage.ts:205` 对 a1≠99 一律建 Stroke，`0:97/98/99` 由字体层当变换应用
+    （我们侧 `expand` 产 TransformOp、`legacy_kurgm` 的 `_transform_drawer`
+    施加；kurgm 侧桥接同），其余 `0:` 行两侧都是空操作。实测被排除的 10 个
+    字形 0/10 mismatch → 过滤收窄为「9 条已知畸形行」一类，不再排除 `0:` 行。
 
     注意：gsftool 2c5dea2 起 a1 位域行（101/103/106/107 等）已是合法
     Stroke，不再进此过滤（旧口径曾据此排除约 1,514 个字形；专项验收见
@@ -67,15 +69,17 @@ def split_residual_junk(cases: list) -> tuple:
 
 
 def has_residual_junk(data: str) -> bool:
-    """data 是否含残余垃圾行（首列可 int 化的 RawOp，两侧解释不同）。"""
+    """data 是否含残余垃圾行（首列可 int 化 ∉ {0,99} 的 RawOp，两侧解释不同）。"""
     return any(isinstance(op, RawOp) and _int_like(op.cols[0])
+               and int(op.cols[0]) not in (0, 99)
                for op in parse_kage2(data).ops)
 
 
 def first_junk_row(data: str) -> str:
     """首个残余垃圾行（排除例披露用）；无则空串。"""
     for op in parse_kage2(data).ops:
-        if isinstance(op, RawOp) and _int_like(op.cols[0]):
+        if isinstance(op, RawOp) and _int_like(op.cols[0]) \
+                and int(op.cols[0]) not in (0, 99):
             return ":".join(op.cols[:8])
     return ""
 

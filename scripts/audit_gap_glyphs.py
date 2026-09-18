@@ -20,13 +20,12 @@ a1 位域行（`101:`/`102:`/`103:`/`106:`/`107:` 等）与畸形首列行被降
 
 CLI:
   python scripts/audit_gap_glyphs.py [--dump PATH] [--limit N] [--workers N]
-                                     [--seed S] [--sample N] [--quiet]
+                                     [--seed S] [--sample N] [--baseline]
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import shutil
 import subprocess
@@ -196,7 +195,6 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--baseline", action="store_true",
                     help="剔除旧缺口行复现 pre-2c5dea2 的假 mismatch 基线")
-    ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
 
     if not Path(a.dump).exists():
