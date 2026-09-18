@@ -1,5 +1,6 @@
 # tests/test_pen_minimal.py
 from gsf.kage2 import parse_kage2
+from gsf.model import RawOp
 
 from gsrender.compare import compare
 from gsrender.legacy_kurgm import LegacyKurgmBackend
@@ -90,10 +91,14 @@ def test_transform_op_rows_skipped():
 # ── 终审 I2：warnings 回写与 legacy 对齐 ────────────────────────────
 
 def test_raw_op_warnings_parity_with_legacy():
-    # 含 RawOp 行（101: 等白名单外线种）的字形两后端渲染后 warnings 应一致：
+    # 含 RawOp 行（首列 int 化失败的垃圾行）的字形两后端渲染后 warnings 应一致：
     # raw op skipped 警告两后端都出现。此前 pen-minimal 不向 expand 传
     # warnings，换后端后这类警告静默丢失。
-    g = parse_kage2("101:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
+    # 夹具史：原为 "101:0:0:..."——gsftool 2c5dea2 起 a1 位域行是合法 Stroke
+    # （对齐 kurgm），不再产生 RawOp；改用真正的垃圾行 `-:`（首列 int() 失败）。
+    g = parse_kage2("-:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
+    assert any(isinstance(op, RawOp) for op in g.ops), \
+        "夹具前提：`-:` 行须仍是 RawOp（首列 int 化失败）"
     leg, pen = _R(g), _R(g)
     LegacyKurgmBackend().render(leg)
     get_backend("pen-minimal").render(pen)
@@ -104,7 +109,22 @@ def test_raw_op_warnings_parity_with_legacy():
 
 def test_render_separated_writes_back_warnings():
     # render_separated 同样回写（missing part / raw op 类警告不悬空）
-    g = parse_kage2("101:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
+    g = parse_kage2("-:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
     r = _R(g)
     get_backend("pen-minimal").render_separated(r)
     assert any("raw op skipped" in w for w in r.warnings)
+
+
+# ── gsftool 2c5dea2 下游：a1 位域行不再是 RawOp ─────────────────────
+
+def test_a1_opt_rows_are_strokes_now():
+    # 101 = 直线 + a1_100 选项位（kurgm 拆 a1_100/a1_opt 照画）：解析器放行后
+    # 应零警告、两后端都画出笔画。此前该行降级 RawOp → 两侧都跳过。
+    g = parse_kage2("101:0:0:0:0:0:0$1:0:0:20:50:180:50", "optg")
+    assert not any(isinstance(op, RawOp) for op in g.ops)
+    leg, pen = _R(g), _R(g)
+    lo = LegacyKurgmBackend().render(leg)
+    po = get_backend("pen-minimal").render(pen)
+    assert leg.warnings == [] and pen.warnings == []
+    assert lo.contours, "legacy 须画出 a1 位域笔画（旧语义下 0 轮廓）"
+    assert po.contours, "pen-minimal 须画出 a1 位域笔画"
