@@ -2,6 +2,7 @@ __pycache__/
 .tgrep/
 *.egg-info/
 dist/
+node_modules/
 output/
 .pytest_cache/
 .superpowers/

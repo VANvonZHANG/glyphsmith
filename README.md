@@ -1,128 +1,275 @@
 # glyphsmith
 
-GSF 字形渲染器：agent 原生 CLI + Python 库。双后端：legacy-kurgm（忠实移植）
-与 pen-minimal（等宽描边骨架预览，v2 pen 后端的接口占位）。
+**A renderer for [GSF](https://github.com/VANvonZHANG/gsftool) glyph skeletons** — it turns the KAGE/2
+stroke-skeleton data behind [GlyphWiki](https://glyphwiki.org) into outlines and SVG, through an
+agent-friendly CLI and a Python library.
 
-## 许可证与谱系（重要）
+[![CI](https://github.com/VANvonZHANG/glyphsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/VANvonZHANG/glyphsmith/actions/workflows/ci.yml)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[中文说明（Chinese）](README.zh.md)
 
-本项目按 **GPLv3** 发布。`src/glyphsmith/legacy_kurgm/` 是以下引擎算法的忠实
-Python 移植，行为基准为 kurgm 版：
+Two backends share one outline structure and one CLI:
 
-- **kurgm/kage-engine**（TypeScript，npm `@kurgm/kage-engine`）——移植基准
-- **kamichikoichi/kage-engine**——原版引擎，笔画规则表
-  `kagecd.js`（宋）/`kagedf.js`（黑）的最终出处
-- **HowardZorn/kage-engine**——Python 移植先例（参考）
-- **takushun-wu/kage-cpp**——环检测（CheckGlyph）思路回移植来源
+| Backend | What it is |
+|---|---|
+| `legacy-kurgm` | A line-by-line Python port of the [kage-engine](https://github.com/kurgm/kage-engine) TypeScript renderer. Point-for-point identical to the reference implementation (see [validation](#validation)) — the regression baseline. |
+| `pen-minimal` | A uniform-width stroke preview (butt caps, per-segment quads; Levien's *weak correctness* level). Preview-grade; it is the interface placeholder for the v2 pen backend. |
 
-由 GlyphWiki 数据渲染输出的字形不受 GPLv3 约束（GlyphWiki 数据自身为自由许可）。
+## Why this exists
 
-## 安装
+GlyphWiki glyphs are stored as skeletons. `gsftool` converts them to GSF losslessly; `glyphsmith`
+renders them. Three properties are the reason it was written.
 
-    pip install -e ../gsftool -e .     # gsftool 提供 gsf.kage2 解析
+**1. Faithful rendering, measured rather than claimed.** `legacy-kurgm` is a faithful port of
+kurgm/kage-engine — including its quirks. Faithfulness is checked by fingerprint (contour count +
+vertex count + sha1 of every coordinate, ε = 0), not by eyeballing: 7,614/7,614 on kage-engine's own
+golden matrix, and 1,000/1,000 on randomly sampled real dump glyphs against the original running
+under Node. See [validation](#validation).
 
-（console script 未在 PATH 时可用
-`python -m glyphsmith.cli` 等价调用。）
+**2. It renders what you wrote — it does not quietly "correct" you.** Learned font generators have a
+documented bias: when a glyph differs from the training distribution by a subtle variation, "the bias
+is prone to either correcting or ignoring these subtle variations"
+([SFGN, arXiv:2501.08062](https://arxiv.org/abs/2501.08062)). That is fatal for research on variant
+forms — 俗字 popular forms, chữ Nôm — where the object of study is often a standard glyph *plus one
+extra dot*. A rule engine draws what the data says, which is the whole point here.
 
-## 用法（glyphsmith CLI）
+**3. Agent-native by construction.** The library and the CLI cover the whole loop in one process:
+resolve the reference closure → render → compare against a target → change a parameter → render
+again. `compare` returns raster IoU plus per-stroke structural metrics (bbox IoU, vertex counts,
+Hausdorff distance); the CLI emits one line of JSON on stdout, uses meaningful exit codes, and puts
+the next command to run in `hints` when it fails.
 
-stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
-0 ok / 2 usage（含写盘失败、参数非法）/ 3 unknown glyph / 4 cycle。
+## Installation
 
-    # 语料：GSF 文本文件或 GlyphWiki dump_newest_only.txt（自动识别）
-    glyphsmith render u4e2d --corpus data/dump_newest_only.txt            # stdout 出 SVG
-    glyphsmith render u4e2d --out png --corpus data/dump_newest_only.txt  # 写 u4e2d.png
-    glyphsmith render u4e2d --backend pen-minimal --font sans ...         # 双后端切换
-    glyphsmith resolve u4e2d --corpus ...          # ref 闭包 / 悬空引用 / 最深链
-    glyphsmith inspect u4e2d --corpus ...          # ops 计数（stroke/ref/raw）+ 名字 meta
-    glyphsmith list --like 'u6f2*' --corpus ...    # 名字前缀检索
-    glyphsmith sample --n 8 --seed 1 --corpus ...  # 可复现随机抽样
-    glyphsmith compare a b --corpus ...            # 栅格 IoU + 逐笔结构 diff
-    glyphsmith batch --out outdir --workers 8 --corpus data/dump_newest_only.txt
-                                           # 整库批量渲染（multiprocessing）
+`glyphsmith` needs Python ≥ 3.11, `numpy` and `pillow`, and **gsftool** (the GSF parser/writer, which
+is not on PyPI):
 
-字形名含 `/` 等路径分隔符时写盘名自动清洗（`a/b` → `a_b.png`）。批量口径：
-单字形渲染异常或写盘失败计入 `errors` 不中断；`mkdir` 失败 → exit 2。
+```sh
+pip install git+https://github.com/VANvonZHANG/gsftool
+pip install git+https://github.com/VANvonZHANG/glyphsmith
+glyphsmith --help
+```
 
-## 双后端
+Or work from clones, with the two repositories side by side:
 
-| 后端 | 定位 |
-| --- | --- |
-| `legacy-kurgm` | kurgm/kage-engine 忠实移植：golden 矩阵 7614/7614 指纹全等（宋/黑 × 直线/曲线 × 头尾型），真实 dump 1000 例与 Node 原版指纹全等；旧「白名单缺口」字形 1,523 例专项对拍 1,522 例全等（修复见下，唯一残差为源数据 `116p` 坐标笔误） |
-| `pen-minimal` | 等宽描边骨架预览（Levien 词汇最小子集），验证 Backend 协议的通用性；v2 变宽 pen 后端见 `docs/pen-backend-design.md` |
+```sh
+git clone https://github.com/VANvonZHANG/gsftool
+git clone https://github.com/VANvonZHANG/glyphsmith
+pip install -e gsftool -e "glyphsmith[dev]"    # [dev] adds pytest
+cd glyphsmith && pytest -q
+```
 
-两者经同一 `Backend` 协议注册（`glyphsmith.protocol.get_backend`），CLI
-`--backend` 与 `Renderer(backend=...)` 全链路可切换；`glyphsmith render --backend
-both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双键 +
-`data.backends` 列表；`--out png/outline.json` 时落 `{name}.legacy.*` 与
-`{name}.pen.*` 两个文件）。已知偏差（v1 裁剪）：规格 §5.1 的输入形态
-`<名字|gsf文件|'-'>` 与 stdin 输入尚未实现，v1 仅按位置参数收字形名。
+`python -m glyphsmith.cli …` is equivalent to `glyphsmith …` when the console script is not on
+`PATH`. No glyph data is bundled: point `--corpus` at a GSF file or at GlyphWiki's
+`dump_newest_only.txt`, or use the 8-glyph file in this repository,
+[`examples/showcase.gsf`](examples/showcase.gsf), which every example below uses.
 
-## 测试
+## Quick start
 
-    pytest                    # 全套（含 golden + cross）
-    pytest -m golden          # 只跑 golden 矩阵（7614 例，kurgm 逐指纹对拍）
-    pytest -m "not cross"     # 跳过需要 node/dump 的交叉对拍
+### Render a glyph
 
-外部资源（318MB 的真实 dump、kage-engine）不随仓库分发，也不硬编码路径，
-经环境变量传入；未设或不存在时相关用例**跳过而非失败**：
+```sh
+$ glyphsmith render u4e00-j --corpus examples/showcase.gsf
+{"status": "ok", "data": {"name": "u4e00-j", "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 200\" width=\"200\" height=\"200\"><path d=\"M 14,99 L 186,99 L 186,103 L 14,103 Z M 186,99 L 162,101 L 174,89 Z\" fill=\"black\" fill-rule=\"nonzero\"/></svg>"}, "warnings": [], "hints": []}
 
-    GSF_DUMP=<dump>/dump_newest_only.txt pytest -q         # 真实 dump 用例
-    KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q   # kurgm 交叉对拍（另需 node）
+$ glyphsmith render u6f22-j --out png --corpus examples/showcase.gsf
+{"status": "ok", "data": {"name": "u6f22-j", "path": "u6f22-j.png"}, "warnings": [], "hints": []}
+```
 
-## 全量冒烟（M4 口径）
+`--out` is `svg` (default, returned inline, nothing written), `png` (written to
+`<name>.png` in the current directory), or `outline.json`. `--backend pen-minimal` switches
+renderers; `--backend both` renders with both and returns both results side by side. `--font`
+takes `serif`/`mincho` or `sans`/`gothic`.
 
-`scripts/smoke_full.py` 渲染整库 dump（222 万字形）只计数不写盘，验收
-「零崩溃」：`err` 为单字形渲染异常计数（记录不中断），门槛 err=0。
+### Resolve the reference closure
 
-两口径（数字都进报告）：
+GlyphWiki glyphs are assembled from parts by reference, so rendering one glyph means resolving its
+closure first:
 
-- **stroke-only**（默认）：parts 只含字形自身，ref 行不走闭包——纯 ref
-  字形必然 empty，度量「渲染器对任意数据不崩溃」；
-- `--closure`：`corpus.resolve(name)` 全闭包——度量「每个字形最终轮廓非空」。
+```sh
+$ glyphsmith resolve u6f22 --corpus examples/showcase.gsf
+{"status": "ok", "data": {"name": "u6f22", "closure": ["u26c29-02", "u6c35-01", "u6f22", "u6f22-j"], "dangling": [], "depth": 3}, "warnings": [], "hints": []}
+```
 
-语料路径同样经 `GSF_DUMP` 或 `--corpus PATH` 传入（都缺则报错退出）：
+`closure` is every glyph that participates, `depth` is the deepest reference chain, and `dangling`
+lists references whose target is not in the corpus. Reference cycles are detected during resolution
+and terminate the command with exit code 4 and the cycle path in `data.error` — the renderer never
+recurses forever.
 
-    GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000   # 确定性子集
-    GSF_DUMP=<dump> python scripts/smoke_full.py --workers 16    # 多进程版（数字与串行一致）
-    GSF_DUMP=<dump> python scripts/smoke_full.py --closure --workers 16  # 全闭包口径全量
+### Compare two glyphs
 
-全量基准（2,221,895 字形，legacy-kurgm/mincho）：stroke-only 串行 73s /
-8 workers 15s（ok=166,694 empty=2,055,201 err=0）；closure 16 workers
-142s（ok=2,221,552 empty=343 err=0）。
+```sh
+$ glyphsmith compare u6f22-j u6f22-v --corpus examples/showcase.gsf
+{"status": "ok", "data": {"iou": 0.5289900575614861, "per_stroke": []}, "warnings": ["stroke count mismatch: 15 vs 16; per_stroke skipped"], "hints": []}
+```
 
-冒烟抓出并已修复的移植缺口（共 241 字形，204 例与 kurgm Node 指纹全等）：
+`u6f22-j` and `u6f22-v` are two real variants of 漢 with different component cuts: the rasterized
+IoU is 0.53. Per-stroke metrics are skipped here because the two have different stroke counts, and
+the CLI says so in `warnings` rather than returning a silently meaningless list.
 
-**旧「白名单缺口」已修复（gsftool `2c5dea2`，2026-09-18）**：此前 gsf 解析层
-用字面线种白名单 `{"1","2","3","4","6","7"}`，把 `101:`/`102:`/`103:`/`106:`/
-`107:` 等 a1 位域行（kurgm 拆 a1_100/a1_opt 照画）与部分畸形行降级 RawOp、
-渲染时跳过并发逐行 warning——全库 1,523 字形受影响（约 2,575 条行），其中
-1,514 例与 kurgm 指纹有差。修复后这些行是合法 Stroke（全库 RawOp 计数
-321,370 → 319,939 字形 / 14.399%），`scripts/audit_gap_glyphs.py` 全量对拍
-1,523 例：**修复前 1,514 NEQ → 修复后 1 NEQ**。
+### Use the library
 
-（RawOp 计数口径：按真实记录数 2,221,895 统计，与全量冒烟同口径。裸行扫描
-会多 1——dump 表头伪记录 `name|related|data` 的第三列文本 `data` 被当成字形
-数据解析出一条 RawOp。）
+```python
+from glyphsmith import Corpus, Renderer, compare
 
-唯一残差 `hkcs_m730b-p01-s00` 源于源数据坐标笔误（`2:7:8:…:77:116p`）：
-kurgm 把 `116p` 当 NaN 参与笔画绘制、我们按垃圾行跳过整条笔画，修复前后
-同为此差异（非本次回归，仅 1 字形、零渲染影响；把 `116p` 改成 `116` 后
-两侧 30 轮廓 283 点指纹全等）。全库残余 9 条畸形行（`999:` 伪引用 / `116p`
-笔误 / `-1:0:0:0` 四列行 / `1:0:` 截断行）清单见
-`scripts/audit_gap_glyphs.py::KNOWN_RESIDUAL_GLYPHS`。
+corpus = Corpus.from_gsf("examples/showcase.gsf")     # or Corpus.from_dump("dump_newest_only.txt")
+han = corpus.resolve("u6f22-j")                       # ref closure, cycle-checked
 
-T12/T16 口径下曾从交叉对拍中排除的缺口字形（闭包侧 36 例，含 `hkcs_m31184`
-与 35 例引用垃圾行字形的 `lp_*`/`hs_*`、self-snapshot 侧
-`simch-supercjk_u32501-k`）已随修复全部回归全量比对并全等（闭包 120/120、
-self-snapshot 94/94）。
+serif = Renderer(backend="legacy-kurgm", font="mincho").render(han)
+gothic = Renderer(backend="legacy-kurgm", font="gothic").render(han)     # same skeleton, other genre
+preview = Renderer(backend="pen-minimal").render(han)
 
-- `push_polygon`：Python `math.floor(NaN)` 抛异常（27 字形）；
-- self@N 历史快照自引用被 @版本兜底成假环（94 字形）；
-- `stretch` 退化 box 除零 + `mincho_cd` 曲线体除零：IEEE-754 语义
-  （0 除数 → ±Inf/NaN，120 字形）；
-- box 聚合 min/max：JS `Math.min` 的 NaN 传染语义（84 字形多画）；
-  与 `_round`/指纹 `js_num` 的 NaN/Infinity 穿透。
+print("contours:", len(serif.contours))               # contours: 28
+print("mincho vs gothic  IoU:", round(compare(serif, gothic).iou, 3))    # 0.635
+print("mincho vs preview IoU:", round(compare(serif, preview).iou, 3))   # 0.548
+svg = serif.to_svg()                                  # Outline -> SVG, or to_path_d() for a path
+```
 
-非自身引用 `X@N`（该版本行不在 newest dump）时，glyphsmith 回退渲染 newest X
-并发 `version ref fallback` 警告（corpus.py），而 kurgm 的 kBuhin 为精确匹配、
-查不到即静默跳过该部件——两侧长期存在的语义差异面。
+`Renderer.render()` returns an `Outline`: a list of contours of `(x, y, off)` points on GlyphWiki's
+200×200 grid, y down, `off=1` marking off-curve (TrueType convention) points.
+
+## Architecture
+
+| Module | Role |
+|---|---|
+| `glyphsmith.protocol` | The `Backend` ABC + registry, `Renderer` (public API), `RenderOptions` |
+| `glyphsmith.corpus` | `Corpus`: loads a GSF file or a GlyphWiki dump, caches parses, resolves reference closures, detects cycles, reports dangling references |
+| `glyphsmith.legacy_kurgm` | The faithful port: mincho/gothic rule tables (straight and curve variants), stroke geometry, transforms, fingerprinting |
+| `glyphsmith.pen_minimal` | Preview backend: uniform-width outline of every control segment |
+| `glyphsmith.outline` | The shared `Outline` structure both backends produce (`to_svg`, `to_path_d`) |
+| `glyphsmith.compare` | Raster IoU and per-stroke metrics |
+| `glyphsmith.batch` | Multiprocess whole-corpus rendering to `outdir/<name>.svg` |
+| `glyphsmith.cli` | The JSON-contract CLI |
+
+The data flow is deliberately narrow: `Corpus.resolve(name)` → `ResolveResult` (the glyph plus its
+parts plus warnings) → `Backend.render(result)` → `Outline`. Everything downstream — SVG, PNG,
+`compare`, `batch`, the smoke harness — consumes `Outline` and is therefore backend-agnostic. Adding
+a backend means calling `Backend.register`; the CLI, `compare` and `batch` pick it up unchanged.
+
+## CLI contract
+
+`glyphsmith` writes exactly one line of JSON to stdout, always with the same envelope:
+
+```json
+{"status": "ok|error", "data": {…}, "warnings": ["…"], "hints": [{"action": "…", "reason": "…"}]}
+```
+
+| Exit code | Meaning |
+|---|---|
+| 0 | success — payload in `data` |
+| 2 | usage error: bad arguments, unknown backend/font, corpus not openable, write failure |
+| 3 | unknown glyph — `hints` contains a `glyphsmith list --like '<prefix>*'` suggestion |
+| 4 | reference cycle — `data.error` carries the cycle path |
+
+Diagnostics never go to stdout, so `glyphsmith … | jq .data.svg` works. Warnings are data, not
+failure: dangling references, version fallbacks and similar conditions are reported in `warnings`
+while the command still exits 0.
+
+## Validation
+
+Every number below is reproducible from this repository; the harnesses skip (never fail) when their
+external inputs are missing.
+
+| Tier | What it checks | Result |
+|---|---|---|
+| Golden matrix | kage-engine's own 7,614 cases, per-character fingerprint | **7,614/7,614** |
+| Cross-engine | 1,000 randomly sampled real dump glyphs, fingerprints against kage-engine under Node | **1,000/1,000** |
+
+The golden fixture is kage-engine's own `test/strokes.js` snapshot
+(`tests/fixtures/kurgm-strokes-golden.tsv`) — the reference implementation's expectations, not
+ours.
+| Full-dump smoke | every glyph in `dump_newest_only.txt` (2,221,895), rendered, counted, never written | **2,221,895 glyphs, err=0** |
+| Test suite | `pytest` | **7,783 passed** |
+
+```sh
+pytest -q                                                   # 7,775 passed, 8 skipped (no external data)
+pytest -m golden -q                                         # 7,614 passed — the golden matrix
+GSF_DUMP=<dump>/dump_newest_only.txt \
+  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 7,783 passed — nothing skipped
+```
+
+The 8 tests that skip without external resources are the ones that need the 318 MB dump, Node.js, or
+a kage-engine checkout. They are enabled by environment variables, never by editing test code:
+
+| Variable | Used by | Meaning |
+|---|---|---|
+| `GSF_DUMP` | `pytest`, `scripts/smoke_full.py` | Path to `dump_newest_only.txt`. Unset ⇒ dump-backed tests skip. |
+| `KAGE_ENGINE` | `pytest`, `scripts/render_bridge.mjs` | Path to kage-engine's ESM entry (`<kage-engine>/lib/esm/index.js`, or `node_modules/@kurgm/kage-engine/lib/esm/index.js` after `npm install @kurgm/kage-engine`). Unset ⇒ cross-engine tests skip and `render_bridge.mjs` exits 2 with a JSON error on stderr. |
+
+Full-dump smoke, both scopes (`scripts/smoke_full.py`, 16 workers, `legacy-kurgm`/mincho):
+
+| Scope | Total | ok | empty | err | Wall clock |
+|---|---:|---:|---:|---:|---:|
+| stroke-only (parts = the glyph itself) | 2,221,895 | 166,755 | 2,055,140 | **0** | 82 s serial / 17 s at 8 workers |
+| closure (`Corpus.resolve` per glyph) | 2,221,895 | 2,221,576 | 319 | **0** | 213 s at 16 workers |
+
+The two scopes measure different things: stroke-only asks "does the renderer survive arbitrary
+data" (a pure-reference glyph is *expected* to be empty, since its parts are not resolved), while
+closure asks "does every glyph end up with a non-empty outline". Wall-clock is machine-dependent;
+the counters are not — the repo's test suite pins serial and parallel runs to identical counts.
+A quick subset check:
+
+```sh
+$ GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000 --workers 8
+scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.7s rate=7322/s
+```
+
+## Known limitations
+
+- **`legacy-kurgm` renders 宋 and 黑 only** (`--font serif|sans` → mincho/gothic), inherited from
+  kage-engine's two rule tables (`kagecd.js`/`kagedf.js`). Other genres — 楷, 圆, 隶 — are not
+  covered; they are the motivation for the v2 pen backend.
+- **`pen-minimal` is preview-grade.** Uniform `WIDTH = 8.0`, butt caps only, per-segment quads with
+  no boolean union, transforms skipped. It exists to prove the `Backend` protocol is not
+  legacy-shaped, and it is a fast preview tool. The design for the real pen backend
+  (relational graph + style files + variable-width nib) is in
+  [`docs/pen-backend-design.md`](docs/pen-backend-design.md) — written in Chinese; the module names,
+  YAML and tables are language-independent.
+- **`batch` does not resolve references.** Like the smoke harness it renders each glyph with its own
+  parts only (a throughput decision at dump scale), so reference-only glyphs come out as empty SVGs.
+  Use `render` when you need closure-resolved output. `empty` is reported in the batch stats.
+- **No SFD/OTF export.** Output is SVG, PNG and `outline.json`. There is no font-file writer.
+- **No IDS layout layer.** Composition is by explicit `ref` + box, exactly as GlyphWiki stores it;
+  there is no automatic 左右/上下 structure inference.
+- **One known residual glyph.** `hkcs_m730b-p01-s00` contains `116p` where a number belongs — a
+  typo in the source data. kage-engine lets `NaN` flow through the stroke maths; we skip the
+  malformed row and draw the rest. Zero rendering impact on the other 2,221,894 glyphs; with the
+  typo corrected the two sides agree exactly. Residual malformed rows are listed in
+  `scripts/audit_gap_glyphs.py::KNOWN_RESIDUAL_GLYPHS`.
+- **Version-fallback semantics differ from kage-engine by design.** When `X@N` is referenced but
+  that version is absent from a newest-only dump, glyphsmith falls back to rendering newest `X` and
+  emits a `version ref fallback` warning; kage-engine looks the part up exactly and silently draws
+  nothing. This is a long-standing, disclosed difference in the corpus layer, not in the renderer.
+
+## License and provenance
+
+`glyphsmith` is free software under the **GNU General Public License v3.0 or later**
+(GPL-3.0-or-later) — see [`LICENSE`](LICENSE). Copyright (C) 2026 Fan Zhang.
+
+The `legacy-kurgm` backend is a port, and the lineage is specific:
+
+- **[kurgm/kage-engine](https://github.com/kurgm/kage-engine)** (TypeScript, npm
+  `@kurgm/kage-engine`) — the porting baseline; glyphsmith matches its behaviour point for point.
+- **[kamichikoichi/kage-engine](https://github.com/kamichikoichi/kage-engine)** — the original
+  engine, and the ultimate source of the stroke rule tables `kagecd.js` (宋) and `kagedf.js` (黑).
+- **[HowardZorn/kage-engine](https://github.com/HowardZorn/kage-engine)** — a prior Python port,
+  used as a reference.
+- **[takushun-wu/kage-cpp](https://github.com/takushun-wu/kage-cpp)** — the cycle-detection
+  (`CheckGlyph`) approach was back-ported from here.
+
+Glyph data rendered by this software is **not** placed under the GPL by rendering it: GlyphWiki's
+data files are a separate work distributed by the [GlyphWiki Project](https://glyphwiki.org) under
+its own free license ("These data files are free software. Unlimited permission is hereby granted to
+use, copy, and distribute these files, with or without modification, either commercially or
+non-commercially." — Copyright 2009 GlyphWiki Project). `glyphsmith` neither bundles nor
+redistributes that data.
+
+## Related projects
+
+- **[gsftool](https://github.com/VANvonZHANG/gsftool)** — KAGE/2 ⇄ GSF converter and roundtrip
+  verifier; the upstream of every corpus glyphsmith reads. *Bones, not flesh* (存骨不存肉): gsftool
+  keeps the skeleton, glyphsmith draws the flesh.
+- **[GlyphWiki](https://glyphwiki.org)** — the community glyph database this works on, and the
+  source of the test corpus.
+- **[kage-engine](https://github.com/kurgm/kage-engine)** — the reference renderer, used here as the
+  golden and cross-engine oracle.

@@ -11,6 +11,9 @@ requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 dependencies = ["gsftool", "numpy", "pillow"]
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [project.scripts]
 glyphsmith = "glyphsmith.cli:main"
 

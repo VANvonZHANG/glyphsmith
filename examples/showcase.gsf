@@ -1,0 +1,74 @@
+gsf/1
+# glyphsmith showcase corpus — tiny, self-contained, hand-checked.
+#
+# Six glyphs taken from the GlyphWiki dump (dump_newest_only.txt) and converted
+# with gsftool. Every reference in this file resolves inside the file, so the
+# README's quick-start commands run offline and produce no warnings.
+#
+#   u6c35-01          four strokes (氵, the JP water radical)
+#   u26c29-02         eleven strokes (又)
+#   u6f22-j           composite: refs both of the above (漢, JP form)
+#   u6f22             alias glyph: refs u6f22-j
+#   u26c29-02-var-008 eleven strokes (又, alternate cut)
+#   u6f22-v           composite: 漢 built from the alternate 又
+#   u4e00-j           one stroke (一, JP form)
+#   u4e00             alias glyph: refs u4e00-j
+#
+# u6f22-j and u6f22-v are a realistic near-pair: same character, different
+# component cuts. `glyphsmith compare u6f22-j u6f22-v` measures how far apart
+# they are.
+#
+# legend: stroke <type> head <head> tail <tail> [n] (x,y) [via(x,y)] -> (x,y)
+#   type: line=1 quad=2 poly=3 bend=4 cubic=6 vcurve=7
+#   head: flat=0 join-h=2 tip=7 corner-ul=12 corner-ur=22 join-v=32
+#   tail: flat=0 join-h=2 hook=4 tip=7 heel-ll=13 heel-lr=23 cap-t=24 join-v=32
+
+glyph u6c35-01
+stroke quad head tip tail 8 (33,20) via(59,28) (69,41)
+stroke quad head tip tail 8 (12,68) via(38,75) (49,89)
+stroke quad head tip tail 8 (14,133) via(54,142) (50,184)
+stroke quad head corner-ul tail tip (46,145) via(49,138) (86,58)
+
+glyph u26c29-02
+stroke line head flat tail flat (76,34)->(188,34)
+stroke line head flat tail flat (113,13)->(113,53)
+stroke line head flat tail flat (151,13)->(151,53)
+stroke line head corner-ul tail heel-ll (94,63)->(94,92)
+stroke line head join-h tail join-h (94,63)->(170,63)
+stroke line head corner-ur tail heel-lr (170,63)->(170,92)
+stroke line head join-h tail join-h (94,92)->(170,92)
+stroke line head flat tail flat (85,114)->(179,114)
+stroke line head flat tail flat (77,137)->(187,137)
+stroke vcurve head join-v tail tip (132,63)->(132,114)->(132,177)->(63,187)
+stroke quad head tip tail flat (135,137) via(150,172) (180,182)
+
+glyph u6f22-j
+ref u6c35-01 box(1,0,151,200)
+ref u26c29-02 box(-28,0,202,200)
+
+glyph u6f22
+ref u6f22-j box(0,0,200,200)
+
+glyph u26c29-02-var-008
+stroke line head flat tail flat (76,33)->(188,33)
+stroke line head flat tail join-v (111,13)->(111,54)
+stroke line head flat tail join-v (153,13)->(153,54)
+stroke line head flat tail flat (86,54)->(179,54)
+stroke line head corner-ul tail heel-ll (94,74)->(94,97)
+stroke line head join-h tail join-h (94,74)->(170,74)
+stroke line head corner-ur tail join-v (170,74)->(170,97)
+stroke line head join-h tail join-h (94,97)->(170,97)
+stroke line head flat tail flat (85,119)->(179,119)
+stroke line head flat tail flat (77,140)->(187,140)
+stroke vcurve head join-v tail tip (132,54)->(132,114)->(132,177)->(63,187)
+stroke quad head tip tail flat (135,140) via(150,172) (180,182)
+
+glyph u6f22-v
+ref u6c35-01 box(2,0,155,200)
+ref u26c29-02-var-008 box(-23,0,202,200)
+
+glyph u4e00-j
+stroke line head flat tail flat (14,101)->(186,101)
+
+glyph u4e00
+ref u4e00-j box(0,0,200,200)
