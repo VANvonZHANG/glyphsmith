@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - name: Check out glyphsmith
+        uses: actions/checkout@v4
+        with:
+          path: glyphsmith
+
+      # glyphsmith depends on gsftool (the GSF parser/writer), which is not on
+      # PyPI. Checking the sibling repository out next to it reproduces the
+      # layout the project is developed in (`pip install -e ../gsftool -e .`)
+      # and pins nothing to a published artifact.
+      - name: Check out gsftool (dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: VANvonZHANG/gsftool
+          path: gsftool
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: python -m pip install -e gsftool -e "glyphsmith[dev]"
+
+      - name: Run tests
+        working-directory: glyphsmith
+        # No GlyphWiki dump, no Node.js, no kage-engine in CI: every test that
+        # needs one of them declares a skipif on GSF_DUMP / KAGE_ENGINE and
+        # skips itself instead of failing.
+        run: python -m pytest -q
