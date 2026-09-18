@@ -1,10 +1,11 @@
 # tests/test_cross_engine.py
 """M2 里程碑：1000 个真实 dump 字形，Python 渲染与 kurgm（Node）指纹全等。
 
-抽样池 1300 → 白名单缺口过滤（gsf 只认线种 {1,2,3,4,6,7}，101/103 等
-a1_opt 变体与坐标非整数的行在我们侧降级 RawOp 被跳过、kurgm 照画 → 假
-mismatch）→ 干净侧取前 1000 对拍。排除数量与例子只在 summary 披露，不
-参与断言（gsftool 修复不在本任务）。
+抽样池 1300 → 「残余垃圾行」过滤（首列 int 化失败、或笔画字段守卫不满足的
+行在我们侧降级 RawOp 被跳过，两侧语义不同 → 假 mismatch）→ 干净侧取前
+1000 对拍。gsftool `2c5dea2` 起 a1 位域行（101/103/106/107 等）已是合法
+Stroke，不再落入该过滤（见 test_gap_glyphs_now_match_kurgm 的专项验收）。
+排除数量与例子只在 summary 披露，不参与断言。
 """
 import json
 import shutil
@@ -27,18 +28,18 @@ pytestmark = [pytest.mark.cross,
               pytest.mark.skipif(not DUMP.exists() or not NODE,
                                  reason="needs dump + node")]
 
-POOL = 1300    # 抽样池（> 1000：白名单过滤后仍须余足 1000 个对拍字形）
+POOL = 1300    # 抽样池（> 1000：残余垃圾行过滤后仍须余足 1000 个对拍字形）
 SAMPLE = 1000  # M2 判据：1000 个字形指纹全等
 SEED = 1
 
 
 def test_sampled_1000_match():
     sys.path.insert(0, str(ROOT / "scripts"))
-    from sample_dump import first_gap_row, sample, split_whitelist_gap
+    from sample_dump import first_junk_row, sample, split_residual_junk
 
-    clean, excluded = split_whitelist_gap(sample(DUMP, POOL, SEED))
+    clean, excluded = split_residual_junk(sample(DUMP, POOL, SEED))
     assert len(clean) >= SAMPLE, \
-        f"pool {POOL} too small after whitelist filter: {len(clean)} clean"
+        f"pool {POOL} too small after residual-junk filter: {len(clean)} clean"
     cases = clean[:SAMPLE]
     payload = "\n".join(json.dumps({"name": n, "data": d}) for n, d in cases)
     proc = subprocess.run(
@@ -60,12 +61,56 @@ def test_sampled_1000_match():
             continue
         if kurgm_fp[name] == "ERROR" or fingerprint(o) != kurgm_fp[name]:
             mismatch.append(name)
-    # 透明披露（不 assert）：白名单排除数与例
+    # 透明披露（不 assert）：残余垃圾行排除数与例（全库仅 9 条）
     print(f"[cross] pool={POOL} seed={SEED} "
-          f"excluded(whitelist gap)={len(excluded)} compared={len(cases)}")
+          f"excluded(residual junk)={len(excluded)} compared={len(cases)}")
     for name, data in excluded[:10]:
-        print(f"[cross]   excluded {name}: {first_gap_row(data)}")
+        print(f"[cross]   excluded {name}: {first_junk_row(data)}")
     assert mismatch == [], f"{len(mismatch)} mismatches, first 10: {mismatch[:10]}"
+
+
+# gsftool 2c5dea2 下游验收：旧「白名单缺口」字形（含 101/102/103/106/107 等
+# a1 位域行、`2:...:116p` 坐标笔误、截断行）——修复前这些行在我们侧降级
+# RawOp 被跳过、kurgm 照画 → 假 mismatch（全量实测 1,514/1,523 NEQ）。修复
+# 后应当趋同，仅剩 gsftool 侧 9 条守卫失败行的固有差异。
+GAP_SAMPLE = 300   # 固定种子抽样数（全量 1,523 的 CLI 验收见 scripts/audit_gap_glyphs.py）
+
+
+def test_gap_glyphs_now_match_kurgm():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from audit_gap_glyphs import (KNOWN_RESIDUAL_GLYPHS, audit,
+                                  iter_gap_glyphs, sample_cases)
+
+    pool = iter_gap_glyphs(DUMP)
+    # 池非空护栏：2026-09 dump 实测 1,523 例（旧口径静默降级 2,575 条行）
+    assert len(pool) >= 1000, \
+        f"旧缺口池异常小（{len(pool)}）——old_gap_row 谓词或 dump 漂移？"
+    by_name = dict(pool)
+    missing = [n for n in KNOWN_RESIDUAL_GLYPHS if n not in by_name]
+    assert missing == [], f"残差白名单字形不在池中（dump 漂移？）: {missing}"
+
+    sample = sample_cases(pool, GAP_SAMPLE, SEED)
+    sampled = {n for n, _ in sample}
+    # 白名单 9 例显式入组（抽样未必覆盖）——残差路径必须被真实走到
+    cases = sample + [(n, by_name[n]) for n in KNOWN_RESIDUAL_GLYPHS
+                      if n not in sampled]
+    r = audit(cases, workers=1)
+    residual = r["mismatch"]
+    unexpected = [m for m in residual if m["name"] not in KNOWN_RESIDUAL_GLYPHS]
+    print(f"[cross] gap-glyphs: pool={len(pool)} sample={GAP_SAMPLE} "
+          f"compared={r['total']} match={r['match']} "
+          f"residual={[m['name'] for m in residual]}")
+    for m in residual:
+        print(f"[cross]   residual {m['name']}: ours={m['ours']} kurgm={m['kurgm']} "
+              f"first_gap_row={m['gap_row']!r}")
+    assert unexpected == [], (
+        f"{len(unexpected)} 个新增/未披露 mismatch（缺口修复未收敛）: "
+        f"{[(m['name'], m['gap_row']) for m in unexpected[:5]]}")
+    # 白名单本身断言：残差必须逐条对上已知的 9 条守卫失败行，不得宽泛过滤
+    for m in residual:
+        assert m["gap_row"] == KNOWN_RESIDUAL_GLYPHS[m["name"]], (
+            f"{m['name']} 残差行变化（{m['gap_row']!r} != "
+            f"{KNOWN_RESIDUAL_GLYPHS[m['name']]!r}）——白名单需重审")
 
 
 # T16 全量冒烟发现的 27 个 ValueError 字形（stroke-only 口径全库唯一非环
@@ -165,21 +210,17 @@ SELF_SNAPSHOT_GLYPHS = [
 
 
 def test_self_snapshot_glyphs_match_kurgm():
-    # 白名单缺口过滤（T12 同口径）：simch-supercjk_u32501-k 含 101: 行
-    # （a1_opt 变体，gsf 降级 RawOp 被跳过、kurgm 照画 → 假 mismatch，
-    # gsftool 修复不在范围）。排除例披露不参与断言。
-    sys.path.insert(0, str(ROOT / "scripts"))
-    from sample_dump import has_whitelist_gap
-
+    # 全量比对（gsftool 2c5dea2 起无排除）：simch-supercjk_u32501-k 曾含
+    # 101: 行（a1_opt 变体，gsf 降级 RawOp 被跳过、kurgm 照画 → 假 mismatch）
+    # 被 T12/本条排除；修复后该行是合法 Stroke，与 kurgm 指纹实测全等
+    # （5 轮廓 38 点）→ 移出排除，94/94 全比。
     from gsrender.corpus import Corpus
     corpus = Corpus.from_dump(DUMP)
     missing = [n for n in SELF_SNAPSHOT_GLYPHS if n not in corpus._data]
     assert missing == [], f"dump 缺名字（dump 版本漂移？）: {missing}"
-    excluded = [n for n in SELF_SNAPSHOT_GLYPHS
-                if has_whitelist_gap(corpus._data[n])]
-    cases = [n for n in SELF_SNAPSHOT_GLYPHS if n not in excluded]
+    cases = list(SELF_SNAPSHOT_GLYPHS)
     print(f"[cross] self-snapshot: {len(cases)}/{len(SELF_SNAPSHOT_GLYPHS)} "
-          f"compared, excluded(whitelist gap)={excluded}")
+          f"compared (no exclusion)")
     payload = "\n".join(json.dumps({"name": n, "data": corpus._data[n]})
                         for n in cases)
     proc = subprocess.run(
@@ -262,22 +303,18 @@ def _closure_buhin(corpus, name):
 
 
 def test_closure_zerodiv_glyphs_match_kurgm():
-    # 白名单缺口过滤（T12 同口径）：hkcs_m31184 的闭包含 101:/102: 行
-    # （a1_opt 变体，gsf 降级 RawOp 被跳过、kurgm 照画 → 假 mismatch，
-    # gsftool 修复不在范围）。排除例披露不参与断言。
-    sys.path.insert(0, str(ROOT / "scripts"))
-    from sample_dump import has_whitelist_gap
-
+    # 全量比对（gsftool 2c5dea2 起无排除）：hkcs_m31184 的闭包曾含 101:/102:
+    # 行（a1_opt 变体，gsf 降级 RawOp 被跳过、kurgm 照画 → 假 mismatch）被
+    # T12/本条排除；修复后这些行是合法 Stroke，实测 90 轮廓 873 点全等 →
+    # 移出排除。另有 35 例（lp_*/hs_* 闭包引用 hs_reserved 等垃圾行字形）
+    # 也随口径收窄回归比对：实测全部全等（0 NEQ、桥接侧 0 ERROR）。
     from gsrender.corpus import Corpus
     corpus = Corpus.from_dump(DUMP)
     missing = [n for n in CLOSURE_ZERODIV_GLYPHS if n not in corpus._data]
     assert missing == [], f"dump 缺名字（dump 版本漂移？）: {missing}"
-    excluded = [n for n in CLOSURE_ZERODIV_GLYPHS
-                if any(has_whitelist_gap(corpus._data[p])
-                       for p in corpus.resolve(n).parts)]
-    cases = [n for n in CLOSURE_ZERODIV_GLYPHS if n not in excluded]
+    cases = list(CLOSURE_ZERODIV_GLYPHS)
     print(f"[cross] closure-zerodiv: {len(cases)}/{len(CLOSURE_ZERODIV_GLYPHS)} "
-          f"compared, excluded(whitelist gap)={excluded}")
+          f"compared (no exclusion)")
     lines = []
     for n in cases:
         lines.append(json.dumps({"name": n, "data": corpus._data[n],

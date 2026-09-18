@@ -1,10 +1,16 @@
 # scripts/sample_dump.py —— 可复现抽样（gsr sample 的雏形）
-"""dump 抽样器 + gsf 白名单缺口过滤（T12 交叉验证的语料侧）。
+"""dump 抽样器 + 残余垃圾行过滤（T12 交叉验证的语料侧）。
 
 sample(): dump_newest_only.txt → (name, data) 可复现随机样本。
-split_whitelist_gap(): 把样本按「是否含白名单外线种行」拆成 (clean,
-excluded)——干净侧进指纹对拍，排除侧只做透明披露（gsftool 的白名单
-修复不在本任务范围，见 T12 简报坑 1）。
+split_residual_junk(): 把样本按「是否含残余垃圾行」拆成 (clean, excluded)——
+干净侧进指纹对拍，排除侧只做透明披露。
+
+口径沿革：gsftool `2c5dea2` 之前这里过滤的是「白名单缺口」（字面线种白名单
+{"1","2","3","4","6","7"} 之外的全部整数首列行，含 101/103 等 a1 位域行，
+约 1,514 个字形）。修复后 a1 位域行是合法 Stroke，过滤自然收窄为真正的
+残余垃圾行——首列仍可 int 化、却因笔画字段守卫不满足被我们降级 RawOp 的行
+（全库实测 9 条：999 伪引用 / 116p 坐标笔误 / -1:0:0:0 四列行 / 截断行），
+这类行 kurgm 会当笔画解释、我们跳过，属两侧语义固有差异。
 """
 import json
 import random
@@ -37,30 +43,37 @@ def _int_like(s: str) -> bool:
     return True
 
 
-def split_whitelist_gap(cases: list) -> tuple:
-    """按「含白名单外线种行」拆分样本 → (clean, excluded)。
+def split_residual_junk(cases: list) -> tuple:
+    """按「含残余垃圾行」拆分样本 → (clean, excluded)。
 
-    gsf.kage2.parse_kage2 只认线种 {1,2,3,4,6,7}（99 ref 行与 0 的
-    97/98/99 调整行另有通道）；其余整数首列行——如 101/103 这类 a1_opt
-    变体（kurgm 拆 a1_100=1/a1_opt=1 照画）、坐标非整数的合法线种行
-    （kurgm Math.floor 后照画）——在我们这边成 RawOp 被渲染层跳过，
-    双方笔画数不同，产生与移植质量无关的假 mismatch。判定口径即解析后
-    ops 里有无 cols[0] 形如整数的 RawOp（宽口径，见报告分解）。
+    判定口径 = 解析后 ops 里有无 cols[0] 形如整数的 RawOp。这类行在
+    「raw parse + expand」对比口径下两侧解释不同，产生与移植质量无关的
+    假 mismatch。两族：
+      * 真垃圾行（全库 9 条）：笔画字段守卫不满足——`2:...:116p` 坐标笔误、
+        `1:0:`/`1:0`/`1` 截断行、`-1:0:0:0` 四列行、`999:...:名字` 伪引用。
+        kurgm 按笔画解释（NaN 坐标），我们跳过。
+      * `0:` 行：kurgm 侧桥接会施加 0:97/98/99 变换，而本对比口径不接
+        gsrender 的 RawOp→TransformOp 通道；纯 `0` 行两侧都是空操作。
+    两条均只影响对拍口径，不影响渲染保真结论。
+
+    注意：gsftool 2c5dea2 起 a1 位域行（101/103/106/107 等）已是合法
+    Stroke，不再进此过滤（旧口径曾据此排除约 1,514 个字形；专项验收见
+    tests/test_cross_engine.py::test_gap_glyphs_now_match_kurgm）。
     """
     clean, excluded = [], []
     for case in cases:
-        (excluded if has_whitelist_gap(case[1]) else clean).append(case)
+        (excluded if has_residual_junk(case[1]) else clean).append(case)
     return clean, excluded
 
 
-def has_whitelist_gap(data: str) -> bool:
-    """data 是否含白名单外线种行（会被 gsf 解析降级为 RawOp 的整数首列行）。"""
+def has_residual_junk(data: str) -> bool:
+    """data 是否含残余垃圾行（首列可 int 化的 RawOp，两侧解释不同）。"""
     return any(isinstance(op, RawOp) and _int_like(op.cols[0])
                for op in parse_kage2(data).ops)
 
 
-def first_gap_row(data: str) -> str:
-    """首个白名单外行（排除例披露用）；无则空串。"""
+def first_junk_row(data: str) -> str:
+    """首个残余垃圾行（排除例披露用）；无则空串。"""
     for op in parse_kage2(data).ops:
         if isinstance(op, RawOp) and _int_like(op.cols[0]):
             return ":".join(op.cols[:8])
