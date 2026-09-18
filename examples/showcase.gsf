@@ -1,9 +1,17 @@
 gsf/1
 # glyphsmith showcase corpus — tiny, self-contained, hand-checked.
 #
-# Six glyphs taken from the GlyphWiki dump (dump_newest_only.txt) and converted
-# with gsftool. Every reference in this file resolves inside the file, so the
-# README's quick-start commands run offline and produce no warnings.
+# Source and license: the eight glyphs below are taken verbatim from the
+# GlyphWiki dump (dump_newest_only.txt, https://glyphwiki.org) and converted to
+# GSF with gsftool. They are redistributed here under the GlyphWiki data
+# license: "These data files are free software. Unlimited permission is hereby
+# granted to use, copy, and distribute these files, with or without
+# modification, either commercially or non-commercially."
+# (Copyright 2009 GlyphWiki Project.) This file is the only bundled glyph data
+# in this repository; it is example material, not a corpus.
+#
+# Every reference in this file resolves inside the file, so the README's
+# quick-start commands run offline and produce no warnings.
 #
 #   u6c35-01          four strokes (氵, the JP water radical)
 #   u26c29-02         eleven strokes (又)

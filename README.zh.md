@@ -57,9 +57,10 @@ cd glyphsmith && pytest -q
 ```
 
 console script 不在 `PATH` 时，`python -m glyphsmith.cli …` 与 `glyphsmith …` 等价。
-本仓不附带字形数据：`--corpus` 指向 GSF 文件或 GlyphWiki 的 `dump_newest_only.txt`，
-也可以直接用本仓的 8 字形示例文件 [`examples/showcase.gsf`](examples/showcase.gsf)——
-下文所有示例都用它。
+全量语料不随仓分发：`--corpus` 指向 GSF 文件或 GlyphWiki 的 `dump_newest_only.txt`。
+唯一例外是 8 字形示例文件 [`examples/showcase.gsf`](examples/showcase.gsf)（见
+[许可证与谱系](#许可证与谱系)），下文所有示例都用它——**这些示例假设你在本仓的克隆里
+操作**，`pip install` 不会带上 `examples/` 目录。
 
 ## 快速开始
 
@@ -136,8 +137,13 @@ svg = serif.to_svg()                                  # Outline -> SVG；或 to_
 
 数据流刻意收得很窄：`Corpus.resolve(name)` → `ResolveResult`（字形 + 部件 + 警告）→
 `Backend.render(result)` → `Outline`。下游的一切——SVG、PNG、`compare`、`batch`、冒烟
-脚本——都只消费 `Outline`，因此与后端无关。新增后端只需 `Backend.register`，CLI、
-`compare`、`batch` 无需改动即可使用。
+脚本——都只消费 `Outline`，因此与后端无关。
+
+新增后端 = 在一个会被 import 的模块里调 `Backend.register`（`glyphsmith/__init__.py` 就是
+这样挂上两个自带后端的）；之后 CLI、`compare` 与库都能按名字用它。但有两处**不是**自动的，
+写新后端前值得知道：`batch` 在独立进程里跑 worker，新后端必须同时加进
+`glyphsmith.batch._BACKEND_MODULES`（后端名 → 模块名，worker 内按名 import；否则 worker 侧
+按未注册后端报错，逐字形计入 `errors`），`scripts/smoke_full.py` 复用同一张表。
 
 ## CLI 契约
 
@@ -243,7 +249,9 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
 由 [GlyphWiki 项目](https://glyphwiki.org)按其自由许可分发（"These data files are free
 software. Unlimited permission is hereby granted to use, copy, and distribute these files,
 with or without modification, either commercially or non-commercially." — Copyright 2009
-GlyphWiki Project）。本仓既不打包也不再分发该数据。
+GlyphWiki Project）。语料本体不在本仓——但本仓也并非零数据：唯一打包的字形数据是
+[`examples/showcase.gsf`](examples/showcase.gsf)，即上文各示例所用的 8 个字形，按同一份
+GlyphWiki 许可再分发，文件头注明了来源与许可。其余语料需自行用 `--corpus` 指定。
 
 ## 相关项目
 

@@ -60,9 +60,11 @@ cd glyphsmith && pytest -q
 ```
 
 `python -m glyphsmith.cli …` is equivalent to `glyphsmith …` when the console script is not on
-`PATH`. No glyph data is bundled: point `--corpus` at a GSF file or at GlyphWiki's
-`dump_newest_only.txt`, or use the 8-glyph file in this repository,
-[`examples/showcase.gsf`](examples/showcase.gsf), which every example below uses.
+`PATH`. The full corpus is not bundled: point `--corpus` at a GSF file or at GlyphWiki's
+`dump_newest_only.txt`. The one exception is the 8-glyph
+[`examples/showcase.gsf`](examples/showcase.gsf) (see [License](#license-and-provenance)), which is
+what every example below uses — **those examples assume you are working in a clone of this
+repository**, since `pip install` does not ship the `examples/` directory.
 
 ## Quick start
 
@@ -143,8 +145,15 @@ svg = serif.to_svg()                                  # Outline -> SVG, or to_pa
 
 The data flow is deliberately narrow: `Corpus.resolve(name)` → `ResolveResult` (the glyph plus its
 parts plus warnings) → `Backend.render(result)` → `Outline`. Everything downstream — SVG, PNG,
-`compare`, `batch`, the smoke harness — consumes `Outline` and is therefore backend-agnostic. Adding
-a backend means calling `Backend.register`; the CLI, `compare` and `batch` pick it up unchanged.
+`compare`, `batch`, the smoke harness — consumes `Outline` and is therefore backend-agnostic.
+
+Adding a backend is a `Backend.register` call in a module that gets imported (that is how
+`glyphsmith/__init__.py` wires up the two shipped backends). The CLI, `compare` and the library then
+accept it by name. Two places are **not** automatic, and are worth knowing before you write one:
+`batch` runs its workers in separate processes, so a new backend must also be added to
+`glyphsmith.batch._BACKEND_MODULES` (a name→module map imported inside each worker; otherwise the
+workers fail with an unknown-backend error counted per glyph), and `scripts/smoke_full.py` reuses
+that same map.
 
 ## CLI contract
 
@@ -174,12 +183,12 @@ external inputs are missing.
 |---|---|---|
 | Golden matrix | kage-engine's own 7,614 cases, per-character fingerprint | **7,614/7,614** |
 | Cross-engine | 1,000 randomly sampled real dump glyphs, fingerprints against kage-engine under Node | **1,000/1,000** |
+| Full-dump smoke | every glyph in `dump_newest_only.txt` (2,221,895), rendered, counted, never written | **2,221,895 glyphs, err=0** |
+| Test suite | `pytest` | **7,783 passed** |
 
 The golden fixture is kage-engine's own `test/strokes.js` snapshot
 (`tests/fixtures/kurgm-strokes-golden.tsv`) — the reference implementation's expectations, not
 ours.
-| Full-dump smoke | every glyph in `dump_newest_only.txt` (2,221,895), rendered, counted, never written | **2,221,895 glyphs, err=0** |
-| Test suite | `pytest` | **7,783 passed** |
 
 ```sh
 pytest -q                                                   # 7,775 passed, 8 skipped (no external data)
@@ -261,8 +270,11 @@ Glyph data rendered by this software is **not** placed under the GPL by renderin
 data files are a separate work distributed by the [GlyphWiki Project](https://glyphwiki.org) under
 its own free license ("These data files are free software. Unlimited permission is hereby granted to
 use, copy, and distribute these files, with or without modification, either commercially or
-non-commercially." — Copyright 2009 GlyphWiki Project). `glyphsmith` neither bundles nor
-redistributes that data.
+non-commercially." — Copyright 2009 GlyphWiki Project). The corpus itself is not part of this
+repository — but neither is the repository data-free: the only glyph data bundled here is
+[`examples/showcase.gsf`](examples/showcase.gsf), the 8 glyphs used by the examples above,
+redistributed under that same GlyphWiki license. Its file header records the source and the
+license. Everything else you must point `--corpus` at yourself.
 
 ## Related projects
 

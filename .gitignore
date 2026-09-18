@@ -1,6 +1,7 @@
 __pycache__/
 .tgrep/
 *.egg-info/
+build/
 dist/
 node_modules/
 output/

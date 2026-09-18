@@ -148,7 +148,8 @@ KAGE 是日本项目，规则表术语全是日本字体工程行话。下表是
 ## 六、几何与学术依据
 
 **(a) 描边 → 填充轮廓：Levien & Uguray「GPU-friendly Stroke Expansion」
-（SIGGRAPH Asia 2024）** 把「描边→填充」整理为**平行曲线 + join
+（SIGGRAPH Asia 2024，arXiv:2405.00127 <https://arxiv.org/abs/2405.00127>）**
+把「描边→填充」整理为**平行曲线 + join
 （bevel/miter/round）+ cap（butt/square/round）** 的干净词汇，并区分：
 
 - **弱正确**（weak correctness）：平行曲线 + 端帽 + 外连接，工程够用；
@@ -162,16 +163,18 @@ KAGE 是日本项目，规则表术语全是日本字体工程行话。下表是
 分段常值/线性函数逼近 w(t)。
 
 **(c) 参数化汉字的直系先例**：John Hobby《A Chinese Meta-Font》（TUGboat,
-1984）用 Metafont 笔模型 + 参数化笔画例程做汉字，不同笔画例程吃不同字体
-参数——本节的管线在 42 年前已被验证过一次。谱系：Knuth《The Concept of a
-Meta-Font》（1980）→ Hobby（1984）→ 可变字体「风格=参数向量」→ CSS
-`stroke-linecap`/`stroke-linejoin`（端帽/连接词汇的标准化）。
+1984，<https://tug.org/TUGboat/tb05-2/tb10hobby.pdf>）用 Metafont 笔模型 +
+参数化笔画例程做汉字，不同笔画例程吃不同字体参数——本节的管线在 42 年前已被
+验证过一次。谱系：Knuth《The Concept of a Meta-Font》（1980）→ Hobby（1984）
+→ 可变字体「风格=参数向量」→ CSS `stroke-linecap`/`stroke-linejoin`
+（端帽/连接词汇的标准化）。
 
 **(d) 关系图的历史与实践**：ARG（attributed relational graph）联机汉字识别
 （IET 1996）与层级属性图（Pattern Recognition 1991）是「笔画=节点、关系=边」
-的经典用法；StrokeStrip（2022）给出笔画分组与 tangency/连接判据的现代实现；
-Berio et al.《StrokeStyles》（TOG 2022）证明「轮廓 ↔ 笔画」双向转换 + 换风格
-是活跃方向。v2 的 graph 模块取前者的关系词汇、后者的分组判据。
+的经典用法；StrokeStrip（2022，<https://www.davepagurek.com/programming/strokestrip/>）
+给出笔画分组与 tangency/连接判据的现代实现；Berio et al.《StrokeStyles》
+（ACM TOG 2022，<https://doi.org/10.1145/3505246>）证明「轮廓 ↔ 笔画」双向转换
++ 换风格是活跃方向。v2 的 graph 模块取前者的关系词汇、后者的分组判据。
 
 ## 七、明确不做（v2 非目标）
 

@@ -7,12 +7,16 @@ build-backend = "setuptools.build_meta"
 name = "glyphsmith"
 version = "0.1.0"
 description = "AI-agent-native GSF glyph renderer (legacy-kurgm faithful port + pen backends)"
+readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 dependencies = ["gsftool", "numpy", "pillow"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+
+[project.urls]
+Repository = "https://github.com/VANvonZHANG/glyphsmith"
 
 [project.scripts]
 glyphsmith = "glyphsmith.cli:main"
