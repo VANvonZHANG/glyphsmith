@@ -1,22 +1,26 @@
 # tests/test_golden_curve_glyph.py
-"""T11 曲线模式 + 整字 golden：mc:/gc: 子集（1120 例）与 glyph: 整字（14 例）。
+"""T11 curve mode + whole-glyph golden: the mc:/gc: subsets (1120 cases) and
+glyph: whole glyphs (14 cases).
 
-- mc: = Mincho kUseCurve=True——cdDrawCurveU 曲线拟合分支（find_offcurve）
-  与 off-curve 点首次进 golden；
-- gc: = Gothic kUseCurve=True——gothic cd.ts 不读 kUseCurve，渲染逻辑与
-  g: 相同，矩阵为受限头/尾的独立采样；T8 起一直绿但无测试锁定，本文件
-  一并锁定；
-- glyph: = 整字（buhin 递归展开 + stretch + 0:97/98/99 transform +
-  mincho adjust 七连管），kUseCurve=False，golden id 形如
-  "glyph:u6f22:u6f22:m" / "glyph:transform:r90:g"。
+- mc: = Mincho kUseCurve=True — the cdDrawCurveU curve-fitting branch
+  (find_offcurve) and off-curve points enter golden for the first time;
+- gc: = Gothic kUseCurve=True — gothic cd.ts never reads kUseCurve, so the
+  rendering logic matches g:, and the matrix is an independent sample with
+  restricted heads/tails; it has been green since T8 but was not locked by a
+  test, so this file locks it too;
+- glyph: = whole glyphs (recursive buhin expansion + stretch + 0:97/98/99
+  transform + the mincho seven-stage adjust pipeline), kUseCurve=False, with
+  golden ids shaped like "glyph:u6f22:u6f22:m" / "glyph:transform:r90:g".
 
-判据 = 指纹逐字符全等（KT/strokes.ts fingerprint：轮廓数 点数 sha1）。
-ERROR 豁免逻辑同 gothic 模板：drawer 抛异常且 golden 亦为 ERROR 才豁免
-（两侧同为 ERROR；一侧 ERROR 一侧正常即失败）。
+Criterion = fingerprints identical character for character (KT/strokes.ts
+fingerprint: contour count, point count, sha1).
+The ERROR exemption logic matches the gothic template: a drawer raising is
+exempt only if golden is also ERROR (both sides ERROR; ERROR on one side and
+normal on the other fails).
 """
 import pytest
 from gsf.kage2 import parse_kage2
-from glyphsmith.legacy_kurgm import LegacyKurgmBackend   # import 即注册
+from glyphsmith.legacy_kurgm import LegacyKurgmBackend   # importing it registers it
 from glyphsmith.legacy_kurgm.expansion import expand
 from glyphsmith.legacy_kurgm.fingerprint import fingerprint
 from glyphsmith.legacy_kurgm.font import Shotai, select_font
@@ -24,9 +28,9 @@ from glyphsmith.outline import Outline
 from tests.golden import build_cases, glyph_cases, load_golden
 
 GOLDEN = load_golden()
-CURVE_CASES = [c for c in build_cases() if c[3]]        # mc:/gc:（c[2] 为 m/g）
+CURVE_CASES = [c for c in build_cases() if c[3]]        # mc:/gc: (c[2] is m/g)
 
-# glyph: 整字展开为 (id, data, shotai, use_curve, buhin, name)，data = buhin[name]
+# glyph: whole glyphs expand to (id, data, shotai, use_curve, buhin, name) with data = buhin[name]
 GLYPH_CASES = [
     (f"{gid}:{name}:{s}", buhin[name], s, False, buhin, name)
     for gid, buhin, names in glyph_cases()
@@ -37,12 +41,13 @@ GLYPH_CASES = [
 
 def _render_and_check(case_id, data, shotai, use_curve, buhin, name):
     font = select_font(Shotai.K_MINCHO if shotai == "m" else Shotai.K_GOTHIC)
-    font.k_use_curve = use_curve      # Font 属性（简报原文 font.params.kUseCurve
-                                      # 会静默新建无关属性，已按 T7 现状适配）
-    if buhin is None:                 # 单笔画：自身即部件
+    font.k_use_curve = use_curve      # Font property (the brief's font.params.kUseCurve
+                                      # would silently create an unrelated attribute;
+                                      # adapted to the T7 reality)
+    if buhin is None:                 # single stroke: the glyph is its own part
         glyph = parse_kage2(data)
         parts = {glyph.name: glyph}
-    else:                             # 整字：parts = 全 buhin 表
+    else:                             # whole glyph: parts = the full buhin table
         parts = {k: parse_kage2(v) for k, v in buhin.items()}
         glyph = parts[name]
     drawers = font.get_drawers(expand(glyph, parts))

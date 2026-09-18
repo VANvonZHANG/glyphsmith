@@ -34,5 +34,5 @@ def test_unknown_backend_raises():
 
 def test_renderer_dispatch():
     r = Renderer(backend="dummy")
-    out = r.render(object())   # DummyBackend 不看 result
+    out = r.render(object())   # DummyBackend ignores result
     assert out.contours[0][1] == (10.0, 0.0, 0)

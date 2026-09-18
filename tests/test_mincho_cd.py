@@ -1,7 +1,7 @@
-"""mincho_cd 转换助手 _js_index 的 JS 语义测试。
+"""JS-semantics tests for mincho_cd's conversion helper _js_index.
 
-注：_js_index 为私有名，但它是被测单元本身且无公开等价物，
-测试直接 import 私有名在此场景可接受。
+Note: _js_index is a private name, but it is the unit under test itself and has
+no public equivalent, so importing a private name directly is acceptable here.
 """
 import math
 
@@ -9,7 +9,8 @@ from glyphsmith.legacy_kurgm.font.mincho_cd import _js_index
 
 
 def test_js_index_negative_returns_nan():
-    # JS: arr[-1] 是对属性 "-1" 的查询 -> undefined -> 算术后 NaN（非 Python 镜像索引）
+    # JS: arr[-1] is a lookup of the property "-1" -> undefined -> NaN once used in
+    # arithmetic (not Python's negative indexing)
     assert math.isnan(_js_index([10, 20, 30, 40, 50], -1))
 
 

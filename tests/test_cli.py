@@ -81,7 +81,7 @@ def test_sample_reproducible(tmp_path):
     assert r1["data"]["names"] == r2["data"]["names"]
 
 
-# ── T14 审查修复（M2 写盘契约 / M1 笔数不等 warning）──
+# ── T14 review fixes (M2 write contract / M1 stroke-count-mismatch warning) ──
 
 @pytest.fixture
 def slash(tmp_path):
@@ -92,7 +92,8 @@ def slash(tmp_path):
 
 
 def test_render_slash_name_sanitized_to_filename(slash, tmp_path, monkeypatch):
-    # 名字里的路径分隔符清洗后写盘（T14 审查 M2：a/b 曾直接拼进文件名）
+    # path separators in a name are sanitised before writing (T14 review M2: a/b
+    # used to be concatenated straight into the filename)
     monkeypatch.chdir(tmp_path)
     code, payload = _run(["render", "a/b", "--corpus", str(slash), "--out", "png"])
     assert code == 0 and payload["status"] == "ok"
@@ -101,9 +102,11 @@ def test_render_slash_name_sanitized_to_filename(slash, tmp_path, monkeypatch):
 
 
 def test_render_write_failure_exit2_json_not_traceback(mini, tmp_path, monkeypatch):
-    # 写盘失败 → exit 2 + JSON 错误（此前 raw traceback + exit 1 + stdout 无 JSON）
+    # write failure → exit 2 + JSON error (previously raw traceback + exit 1 +
+    # no JSON on stdout)
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "g.png").mkdir()          # 目标名被目录占用 → IsADirectoryError(OSError)
+    # target name taken by a directory → IsADirectoryError (an OSError)
+    (tmp_path / "g.png").mkdir()
     (tmp_path / "g.outline.json").mkdir()
     for out in ("png", "outline.json"):
         code, payload = _run(["render", "g", "--corpus", str(mini), "--out", out])
@@ -127,11 +130,11 @@ def test_compare_stroke_count_mismatch_warns(tmp_path):
         "stroke line head flat tail flat (20,20)->(80,80)\n", encoding="utf-8")
     code, payload = _run(["compare", "one", "two", "--corpus", str(p)])
     assert code == 0
-    assert payload["data"]["per_stroke"] == []      # 笔数不等 → 逐笔 diff 跳过
+    assert payload["data"]["per_stroke"] == []      # counts differ → per-stroke diff skipped
     assert "stroke count mismatch: 1 vs 2; per_stroke skipped" in payload["warnings"]
 
 
-# ── T16：glyphsmith batch（批量渲染子命令）──
+# ── T16: glyphsmith batch (the batch-render subcommand) ──
 
 def test_batch_writes_svds(tmp_path):
     p = tmp_path / "c.gsf"
@@ -148,7 +151,8 @@ def test_batch_writes_svds(tmp_path):
 
 
 def test_batch_dump_autodetected(tmp_path):
-    # dump_newest_only 格式自动识别（首行含 '|' 且非 gsf/ 头），无需 --dump
+    # dump_newest_only auto-detection (first line contains '|' and is not a gsf/
+    # header); --dump not needed
     p = tmp_path / "d.txt"
     p.write_text(" name | related | data \n"
                  " g    | u3013   | 1:0:0:10:10:100:60:2:2 \n", encoding="utf-8")
@@ -160,14 +164,16 @@ def test_batch_dump_autodetected(tmp_path):
 
 
 def test_batch_dump_flag_forces_dump_mode(tmp_path):
-    # 首行为空行的 dump（自动识别只看首行 → 误判 GSF → from_gsf 静默空库）；
-    # --dump 显式强制 from_dump。数据行本身必须含 '|'（三列格式）。
+    # A dump whose first line is blank (auto-detection only looks at the first
+    # line → misjudged as GSF → from_gsf silently loads an empty corpus); --dump
+    # forces from_dump explicitly. The data line itself must contain '|' (the
+    # three-column format).
     body = " name | related | data \n g | u3013 | 1:0:0:10:10:100:60:2:2 \n"
     p = tmp_path / "d.txt"
     p.write_text("\n" + body, encoding="utf-8")
     out = tmp_path / "o"
     code, payload = _run(["batch", "--corpus", str(p), "--out", str(out),
-                          "--workers", "1"])          # 无 --dump：误判 → 空库
+                          "--workers", "1"])          # no --dump: misjudged → empty corpus
     assert code == 0 and payload["data"]["rendered"] == 0
     out2 = tmp_path / "o2"
     code, payload = _run(["batch", "--corpus", str(p), "--out", str(out2),
@@ -185,7 +191,8 @@ def test_batch_negative_workers_exit2(tmp_path):
 
 
 def test_batch_unknown_backend_exit2(tmp_path):
-    # 模块头契约：未知 backend → exit 2（而非逐字形 errors=N 跑完）
+    # module header contract: unknown backend → exit 2 (rather than running to
+    # completion with errors=N per glyph)
     p = tmp_path / "c.gsf"
     p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (10,10)->(100,60)\n",
                  encoding="utf-8")
@@ -196,7 +203,8 @@ def test_batch_unknown_backend_exit2(tmp_path):
 
 
 def test_batch_outdir_unwritable_exit2_json(tmp_path):
-    # M2 写盘契约：outdir 路径被文件占用 → exit 2 + JSON 错误而非 traceback
+    # M2 write contract: outdir path taken by a file → exit 2 + JSON error, not a
+    # traceback
     p = tmp_path / "c.gsf"
     p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (10,10)->(100,60)\n",
                  encoding="utf-8")
@@ -207,14 +215,16 @@ def test_batch_outdir_unwritable_exit2_json(tmp_path):
     assert code == 2 and payload["status"] == "error"
 
 
-# ── 全分支终审修复（C1 dump 自动分流 / I1 both 并渲 / M6 OSError）──
+# ── Final-review fixes across all branches (C1 dump auto-routing /
+#    I1 both-backend render / M6 OSError) ──
 
-# 真实 dump 是外部数据集：GSF_DUMP 未设/不存在时跳过（而非失败）相关用例。
+# The real dump is an external dataset: when GSF_DUMP is unset/missing the
+# related cases are skipped (not failed).
 GSF_DUMP = os.environ.get("GSF_DUMP", "").strip()
 DUMP = Path(GSF_DUMP) if GSF_DUMP else None
 
 needs_dump = pytest.mark.skipif(DUMP is None or not DUMP.is_file(),
-                                reason="GSF_DUMP 未指向真实 dump（跳过而非失败）")
+                                reason="GSF_DUMP does not point at a real dump (skip, not fail)")
 
 
 def _dump_head(dst, n=60):
@@ -227,8 +237,10 @@ def _dump_head(dst, n=60):
 
 
 def _first_stroke_name(path):
-    """头部第一个数据列以 stroke 行（head 1-8）开头的字形名（u4e2d 等
-    常用字不在 dump 前 60 行；从头部自取，抗 dump 版本漂移）。"""
+    """Name of the first glyph in the head whose data column starts with a
+    stroke row (head 1-8) — common characters like u4e2d are not in the first
+    60 dump lines; taken from the head itself, so it resists dump version
+    drift."""
     with open(path, encoding="utf-8") as f:
         for line in f:
             cells = line.split("|")
@@ -236,13 +248,15 @@ def _first_stroke_name(path):
                 name, data = cells[0].strip(), cells[2].strip()
                 if name and name != "name" and data[:1] in "12345678":
                     return name
-    raise AssertionError("dump 头部无 stroke 字形（版本漂移？）")
+    raise AssertionError("no stroke glyph in the dump head (version drift?)")
 
 
 @needs_dump
 def test_render_auto_detects_dump_corpus(tmp_path):
-    # C1：非 batch 命令直接吃 dump 语料（README 首例形态）。此前一律
-    # from_gsf，dump 静默装出空库 → unknown glyph exit 3 误导。
+    # C1: non-batch commands take a dump corpus directly (the README's first
+    # example shape). Previously everything went through from_gsf and a dump was
+    # silently loaded as an empty corpus → a misleading exit 3 for unknown
+    # glyph.
     d = tmp_path / "dump.txt"
     _dump_head(d)
     code, payload = _run(["render", _first_stroke_name(d), "--corpus", str(d)])
@@ -252,7 +266,7 @@ def test_render_auto_detects_dump_corpus(tmp_path):
 
 @needs_dump
 def test_list_auto_detects_dump_corpus(tmp_path):
-    # C1 同款分流对 list（检索类命令同样受益）
+    # the same C1 routing for list (search-type commands benefit too)
     d = tmp_path / "dump.txt"
     _dump_head(d)
     code, payload = _run(["list", "--corpus", str(d), "--like", "a*"])
@@ -260,7 +274,7 @@ def test_list_auto_detects_dump_corpus(tmp_path):
 
 
 def test_render_both_backends_svg(mini):
-    # I1：--backend both 双后端各渲一次，svg 双键 + backends 列表
+    # I1: --backend both renders once per backend, with both svg keys + a backends list
     code, payload = _run(["render", "g", "--corpus", str(mini), "--backend", "both"])
     assert code == 0 and payload["status"] == "ok"
     assert payload["data"]["svg_legacy"].startswith("<svg")
@@ -287,7 +301,8 @@ def test_render_both_backends_outline_json_two_files(mini, tmp_path, monkeypatch
 
 
 def test_corpus_path_is_directory_exit2_json(tmp_path):
-    # M6：语料是目录 → IsADirectoryError（OSError 子类、非 FileNotFoundError）
-    # 也走 exit 2 + JSON 契约，而非 raw traceback
+    # M6: the corpus is a directory → IsADirectoryError (an OSError subclass,
+    # not FileNotFoundError) also follows the exit 2 + JSON contract rather than
+    # a raw traceback
     code, payload = _run(["render", "g", "--corpus", str(tmp_path)])
     assert code == 2 and payload["status"] == "error"

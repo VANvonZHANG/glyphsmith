@@ -1,11 +1,12 @@
 # tests/test_golden.py
-"""golden 基建自检：文件完整性、矩阵规模、glyph 用例 id 与 golden 键对齐。"""
+"""Golden infrastructure self-checks: file integrity, matrix size, and glyph
+case ids aligned with golden keys."""
 from tests.golden import GLYPH_CASES, build_cases, glyph_cases, load_golden
 
 
 def test_load_golden_size():
     g = load_golden()
-    # 7600 stroke-matrix + 14 glyph 行（u6f22×2、outer×2、transform×10）
+    # 7600 stroke-matrix + 14 glyph rows (u6f22×2, outer×2, transform×10)
     assert len(g) == 7614
 
 
@@ -18,7 +19,8 @@ def test_load_golden_samples():
 
 def test_build_cases_count_and_uniqueness():
     cases = build_cases()
-    # 2 shotai × (6 类型 × 4 几何 × 9 头 × 15 尾 + 4 类型 × 4 几何 × 5 头 × 7 尾) = 2×3800
+    # 2 shotai × (6 types × 4 geometries × 9 heads × 15 tails
+    #           + 4 types × 4 geometries × 5 heads × 7 tails) = 2×3800
     assert len(cases) == 7600
     ids = [c[0] for c in cases]
     assert len(set(ids)) == 7600
@@ -55,7 +57,8 @@ def test_glyph_case_ids_in_golden():
 
 
 def test_glyph_cases_source_mirrors_glcases():
-    # GLYPH_CASES 原始结构与访问器一致：单 name 用 name 字段，多 name 用 names 数组
+    # the raw GLYPH_CASES structure agrees with the accessor: a single name uses the
+    # name field, multiple names use the names array
     raw_ids = [entry["id"] for entry in GLYPH_CASES]
     assert raw_ids == [c[0] for c in glyph_cases()]
     for entry in GLYPH_CASES:

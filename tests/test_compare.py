@@ -34,9 +34,9 @@ def test_to_dict_serializable():
     json.dumps(compare(_square(), _square()).to_dict())
 
 
-def test_perturbation_detected():   # 判别力负测试（防盲比对复发）
+def test_perturbation_detected():   # discriminating-power negative test
     b = _square()
-    b.contours[0][1] = (180.0, 60.0, 0)      # 挪一个顶点
+    b.contours[0][1] = (180.0, 60.0, 0)      # move one vertex
     assert compare(_square(), b).iou < 1.0
 
 

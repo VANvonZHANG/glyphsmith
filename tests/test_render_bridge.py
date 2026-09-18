@@ -1,16 +1,20 @@
 # tests/test_render_bridge.py
-"""scripts/render_bridge.mjs 的降级契约（改名任务遗留：此前只手工验证过）。
+"""The downgrade contract of scripts/render_bridge.mjs (left over from the
+rename task: previously only verified by hand).
 
-桥接脚本按序解析引擎位置（KAGE_ENGINE → <repo>/node_modules/...，解析规则与
-gsftool scripts/render_check.mjs 一致）。两处都没有时必须：stderr 输出 JSON
-错误、退出码 2、stdout 保持干净（TSV 契约不得被污染）——交叉对拍的调用方
-（tests/test_cross_engine.py）依赖这个退出码语义来区分「引擎缺失」与「渲染差异」。
+The bridge resolves the engine location in order (KAGE_ENGINE →
+<repo>/node_modules/..., the same rule as gsftool scripts/render_check.mjs).
+When neither exists it must: write a JSON error to stderr, exit with code 2,
+and keep stdout clean (the TSV contract must not be polluted) — the
+cross-engine differential callers (tests/test_cross_engine.py) rely on this
+exit-code semantics to tell "engine missing" from "rendering difference".
 
-本测试只需要 node 可执行文件，不需要 kage-engine：把脚本复制到 tmp 下，
-node_modules 候选即解析到 tmp/node_modules（不存在），再用 KAGE_ENGINE 指向
-一个不存在的路径把另一候选也堵死。test_cross_engine.py 的模块级 skipif 要求
-引擎在场，无法覆盖这一分支，故独立成文件（写法参照 gsftool
-tests/test_render_golden.py::test_missing_engine_reports_error_and_exits_2）。
+This test only needs the node executable, not kage-engine: the script is copied
+into tmp, so the node_modules candidate resolves to tmp/node_modules (which does
+not exist), and KAGE_ENGINE is pointed at a non-existent path to block the other
+candidate too. test_cross_engine.py's module-level skipif requires the engine to
+be present and cannot cover this branch, hence a separate file (following
+gsftool tests/test_render_golden.py::test_missing_engine_reports_error_and_exits_2).
 """
 import json
 import os
@@ -28,24 +32,26 @@ needs_node = pytest.mark.skipif(NODE is None, reason="node executable not availa
 
 @needs_node
 def test_missing_engine_reports_json_error_and_exits_2(tmp_path):
-    assert NODE is not None  # skipif 已保证；收窄类型使 subprocess.run 拿到 list[str]
+    # guaranteed by skipif; narrows the type so subprocess.run gets list[str]
+    assert NODE is not None
     script = tmp_path / "render_bridge.mjs"
     shutil.copy(REPO / "scripts" / "render_bridge.mjs", script)
     env = {**os.environ, "KAGE_ENGINE": str(tmp_path / "no-such-engine.js")}
     r = subprocess.run([NODE, str(script)], input='{"name":"g","data":"1:0:0:10:10:100:60"}\n',
                        capture_output=True, text=True, timeout=60, env=env)
     assert r.returncode == 2, r.stderr
-    payload = json.loads(r.stderr)          # stderr 必须是可解析的 JSON（非 traceback）
+    payload = json.loads(r.stderr)          # stderr must be parseable JSON (not a traceback)
     assert payload["error"] == "kage-engine not found"
     assert str(tmp_path / "no-such-engine.js") in payload["tried"]
     assert "KAGE_ENGINE" in payload["hint"]
-    assert r.stdout == ""                   # TSV 契约保持干净：不吐半行
+    assert r.stdout == ""                   # the TSV contract stays clean: no half line
 
 
 @needs_node
 def test_engine_candidate_order_prefers_kage_engine_env(tmp_path):
-    # 解析顺序契约：KAGE_ENGINE 优先于 node_modules 候选——用一个只导出空对象的
-    # 假引擎证明「env 指向者才是被 import 的那个」（缺失即上面的 exit 2 分支）。
+    # Resolution-order contract: KAGE_ENGINE outranks the node_modules candidate —
+    # a fake engine exporting only empty objects proves that "the one the env
+    # points at is the one imported" (missing it is the exit 2 branch above).
     assert NODE is not None
     script = tmp_path / "render_bridge.mjs"
     shutil.copy(REPO / "scripts" / "render_bridge.mjs", script)
@@ -55,6 +61,7 @@ def test_engine_candidate_order_prefers_kage_engine_env(tmp_path):
     env = {**os.environ, "KAGE_ENGINE": str(fake)}
     r = subprocess.run([NODE, str(script)], input="", capture_output=True,
                        text=True, timeout=60, env=env)
-    # 假引擎可 import（不是 exit 2 的「找不到」），空输入下正常收尾
+    # the fake engine imports fine (not the exit 2 "not found"), and empty input
+    # ends cleanly
     assert r.returncode == 0, r.stderr
     assert "kage-engine not found" not in r.stderr

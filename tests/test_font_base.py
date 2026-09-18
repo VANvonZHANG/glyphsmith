@@ -1,9 +1,11 @@
 # tests/test_font_base.py
-"""T7 字体基座：Shotai/select_font、FontParams（K/font/mincho/index.ts:226-356
-逐字段）、df_transform（K:37-72 dfTransform）、drawers 管线占位。
+"""T7 font base: Shotai/select_font, FontParams (field by field from
+K/font/mincho/index.ts:226-356), df_transform (K:37-72 dfTransform), and the
+drawers pipeline placeholder.
 
-期望值全部手算自源公式（报告注明核对方式；另有 node 直跑 kurgm dfTransform
-的数值对拍，见 task-7-report.md）。
+All expected values are hand-computed from the source formulas (the report
+notes how they were checked; there is also a numerical differential against
+kurgm's dfTransform run directly under node, see task-7-report.md).
 """
 import pytest
 
@@ -12,8 +14,9 @@ from glyphsmith.legacy_kurgm.font import Shotai, select_font
 from glyphsmith.legacy_kurgm.font.transform import df_transform
 from glyphsmith.outline import Outline
 
-# ── FontParams：默认分支（= setSize() 无参 → else 分支，K:324-352）──
-# K:234 kRate=100（类字段初始化，setSize 从不触碰）；其余为 else 分支字面量。
+# ── FontParams: default branch (= setSize() with no argument → else, K:324-352) ──
+# K:234 kRate=100 (a class-field initializer setSize never touches); the rest are
+# else-branch literals.
 PARAMS_DEFAULT = dict(
     k_rate=100,
     k_min_width_y=2.0,        # K:325
@@ -40,10 +43,11 @@ PARAMS_DEFAULT = dict(
     k_adjust_mage_step=5,                  # K:351
 )
 
-# ── size==1 分支（K:304-323）。注意源码此分支【不】重置下列字段
-# （kMinWidthU/K:326、kAdjustUroko2Step/K:346、kAdjustUroko2Length/K:347、
-# kAdjustTateStep/K:349、kAdjustMageStep/K:351）——TS 中构造函数先跑无参
-# setSize()（else 分支），故它们保持默认值；照抄该行为。
+# ── size==1 branch (K:304-323). Note the source does NOT reset the following
+# fields here (kMinWidthU/K:326, kAdjustUroko2Step/K:346, kAdjustUroko2Length/
+# K:347, kAdjustTateStep/K:349, kAdjustMageStep/K:351) — in TS the constructor
+# runs the argument-less setSize() first (the else branch), so they keep their
+# default values; that behaviour is copied verbatim.
 PARAMS_SIZE1_OVERRIDE = dict(
     k_min_width_y=1.2,        # K:305
     k_min_width_t=3.6,        # K:306
@@ -75,13 +79,15 @@ def test_select_font_shotai():
 
 
 def test_shotai_values_are_corpus_strings():
-    # 简报规定 K_MINCHO="m"/K_GOTHIC="g"（与 corpus/golden 的 shotai 串一致；
-    # kurgm shotai.ts 本体是 0/1 数值枚举，语义一一对应）
+    # The brief mandates K_MINCHO="m"/K_GOTHIC="g" (matching the corpus/golden
+    # shotai strings; kurgm shotai.ts itself is a 0/1 numeric enum, in
+    # one-to-one correspondence)
     assert (Shotai.K_MINCHO, Shotai.K_GOTHIC) == ("m", "g")
 
 
 def test_select_font_fresh_instance_each_call():
-    # K/font/index.ts:25-32 select() 每次返回新实例：改一个不影响另一个
+    # K/font/index.ts:25-32 select() returns a fresh instance each time: changing
+    # one does not affect the other
     a, b = select_font(Shotai.K_MINCHO), select_font(Shotai.K_MINCHO)
     assert a is not b
     a.set_size(1)
@@ -102,7 +108,8 @@ def test_params_defaults_from_source():
 
 
 def test_params_set_size_none_is_default():
-    # 构造即等价 setSize()（无参 → else 分支），再来一次是幂等
+    # Construction already equals setSize() (no argument → else branch); doing it
+    # again is idempotent
     f = select_font(Shotai.K_MINCHO)
     f.set_size(None)
     for name, want in PARAMS_DEFAULT.items():
@@ -110,9 +117,11 @@ def test_params_set_size_none_is_default():
 
 
 def test_params_set_size_100_is_default_branch():
-    # 简报原断言 "set_size(100) 后 kRate 变化" 与源不符：K 的 setSize 只在
-    # size===1 上分支（K:304），kRate 是类字段初始化（K:234）从未被 setSize
-    # 触碰——100 走 else 分支 = 默认值（简报明文授权按源修正断言）。
+    # The brief's original assertion "kRate changes after set_size(100)" does not
+    # match the source: K's setSize branches only on size===1 (K:304), and kRate is
+    # a class-field initializer (K:234) never touched by setSize — 100 takes the
+    # else branch = default values (the brief explicitly authorises correcting
+    # assertions against the source).
     f = select_font(Shotai.K_MINCHO)
     f.set_size(100)
     assert f.params.k_rate == 100
@@ -125,66 +134,68 @@ def test_params_set_size_1():
     f.set_size(1)
     for name, want in PARAMS_SIZE1.items():
         assert getattr(f.params, name) == want, name
-    # size==1 分支不重置的五个字段保持默认（源 K:304-323 无赋值）
+    # the five fields the size==1 branch does not reset keep their defaults (no
+    # assignment in source K:304-323)
     for name in ("k_min_width_u", "k_adjust_uroko2_step", "k_adjust_uroko2_length",
                  "k_adjust_tate_step", "k_adjust_mage_step"):
         assert getattr(f.params, name) == PARAMS_DEFAULT[name], name
-    assert f.params.k_rate == 100    # kRate 永不随 size 变
+    assert f.params.k_rate == 100    # kRate never varies with size
 
 
 def test_params_set_size_switch_back():
     f = select_font(Shotai.K_MINCHO)
     f.set_size(1)
-    f.set_size()                    # 回默认
+    f.set_size()                    # back to the default
     assert f.params.k_min_width_t == 6.0
     assert f.params.k_adjust_kakato_l == [14, 9, 5, 2, 0]
 
 
 def test_font_use_curve_property():
-    # K/font/index.ts:15 FontInterface 暴露 kUseCurve（可写，委托 params）
+    # K/font/index.ts:15 FontInterface exposes kUseCurve (writable, delegates to params)
     f = select_font(Shotai.K_GOTHIC)
     assert f.k_use_curve is False
     f.k_use_curve = True
     assert f.params.k_use_curve is True
 
 
-# ── df_transform（K/font/mincho/index.ts:37-72 + K/polygon.ts 变换）──
+# ── df_transform (K/font/mincho/index.ts:37-72 + the K/polygon.ts transforms) ──
 def test_df_transform_flip_y_97():
-    # K:47-51：dy=y1+y2=200，reflectY → y'=-y+dy；floor 在精度 10 内部坐标上
+    # K:47-51: dy=y1+y2=200, reflectY → y'=-y+dy; floor acts on 10×-precision internal coords
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
     df_transform(o, 97, 0, 0, 200, 200)
     assert o.contours == [[(10.0, 180.0, 0), (30.0, 180.0, 0)]]
 
 
 def test_df_transform_flip_x_98():
-    # K:42-46：dx=x1+x2=200，reflectX → x'=-x+dx
+    # K:42-46: dx=x1+x2=200, reflectX → x'=-x+dx
     o = Outline.from_contours([[(10.0, 20.0, 0), (10.0, 60.0, 0)]])
     df_transform(o, 98, 0, 0, 200, 200)
     assert o.contours == [[(190.0, 20.0, 0), (190.0, 60.0, 0)]]
 
 
 def test_df_transform_rotate_99_levels():
-    # K:52-70：rotate90/180/270 + translate(dx,dy)
-    # a3=1（K:53-58）：dx=x1+y2=200, dy=y1-x1=0；(x,y)→(-y,x)+(dx,dy)
+    # K:52-70: rotate90/180/270 + translate(dx,dy)
+    # a3=1 (K:53-58): dx=x1+y2=200, dy=y1-x1=0; (x,y)→(-y,x)+(dx,dy)
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
     df_transform(o, 99, 0, 0, 200, 200, a3=1)
     assert o.contours == [[(180.0, 10.0, 0), (180.0, 30.0, 0)]]
-    # a3=2（K:59-63）：dx=x1+x2=200, dy=y1+y2=200；(x,y)→(-x,-y)+(dx,dy)
+    # a3=2 (K:59-63): dx=x1+x2=200, dy=y1+y2=200; (x,y)→(-x,-y)+(dx,dy)
     o = Outline.from_contours([[(10.0, 20.0, 0)]])
     df_transform(o, 99, 0, 0, 200, 200, a3=2)
     assert o.contours == [[(190.0, 180.0, 0)]]
-    # a3=3（K:64-69）：dx=x1-y1=0, dy=y2+x1=200；(x,y)→(y,-x)+(dx,dy)
+    # a3=3 (K:64-69): dx=x1-y1=0, dy=y2+x1=200; (x,y)→(y,-x)+(dx,dy)
     o = Outline.from_contours([[(10.0, 20.0, 0)]])
     df_transform(o, 99, 0, 0, 200, 200, a3=3)
     assert o.contours == [[(20.0, 190.0, 0)]]
 
 
 def test_df_transform_rect_selection():
-    # K:28-34 selectPolygonsRect：仅整条落在闭矩形内的轮廓被变换
+    # K:28-34 selectPolygonsRect: only a contour lying wholly inside the closed
+    # rectangle is transformed
     o = Outline.from_contours([
-        [(10.0, 20.0, 0)],           # 矩形内 → 变换
-        [(250.0, 20.0, 0)],          # 超出 x2 → 原样
-        [(10.0, 20.0, 0), (250.0, 20.0, 0)],   # 部分在内 → 整条原样
+        [(10.0, 20.0, 0)],           # inside → transformed
+        [(250.0, 20.0, 0)],          # beyond x2 → unchanged
+        [(10.0, 20.0, 0), (250.0, 20.0, 0)],   # partly inside → whole contour unchanged
     ])
     df_transform(o, 97, 0, 0, 200, 200)
     assert o.contours == [
@@ -195,16 +206,16 @@ def test_df_transform_rect_selection():
 
 
 def test_df_transform_rect_boundary_inclusive():
-    # 闭矩形：x==x2 的点在内（K:32 用 <=）
+    # closed rectangle: a point with x==x2 is inside (K:32 uses <=)
     o = Outline.from_contours([[(200.0, 20.0, 0)]])
     df_transform(o, 97, 0, 0, 200, 200)
     assert o.contours == [[(200.0, 180.0, 0)]]
 
 
 def test_df_transform_floor_precision():
-    # K/polygon.ts:33 _precision=10、:365-375 floor()：对内部坐标 floor，
-    # 即 floor(v*10)/10。dy=y1+y2=60.75（y1=10.5, y2=50.25）→ y'=-30+60.75
-    # =30.75 → 内部 307.5 floor 307 → 30.7
+    # K/polygon.ts:33 _precision=10, :365-375 floor(): floor the internal
+    # coordinates, i.e. floor(v*10)/10. dy=y1+y2=60.75 (y1=10.5, y2=50.25) →
+    # y'=-30+60.75=30.75 → internal 307.5 floor 307 → 30.7
     o = Outline.from_contours([[(20.0, 30.0, 0)]])
     df_transform(o, 97, 0, 10.5, 100, 50.25)
     assert o.contours == [[(20.0, 30.7, 0)]]
@@ -224,8 +235,9 @@ def test_df_transform_invalid_kind_raises():
 
 
 def test_df_transform_silent_noop_cases():
-    # 与源一致：a2_opt≠0 → 无分支命中（K:42/47/52 的 && a2_opt===0）；
-    # kind=99 而 a3∉{1,2,3}（K:53/59/64 内层 if）→ 静默 no-op
+    # as in the source: a2_opt≠0 → no branch matches (the && a2_opt===0 at
+    # K:42/47/52); kind=99 with a3∉{1,2,3} (the inner if at K:53/59/64) → silent
+    # no-op
     o = Outline.from_contours([[(10.0, 20.0, 0)]])
     df_transform(o, 97, 0, 0, 200, 200, a2_opt=1)
     df_transform(o, 99, 0, 0, 200, 200)            # a3=0
@@ -233,7 +245,7 @@ def test_df_transform_silent_noop_cases():
     assert o.contours == [[(10.0, 20.0, 0)]]
 
 
-# ── drawers 管线（占位）──────────────────────────────────────────
+# ── drawers pipeline (placeholder) ───────────────────────────────
 def test_get_drawers_pipeline_smoke():
     from gsf.kage2 import parse_kage2
     from glyphsmith.legacy_kurgm.expansion import expand
@@ -245,23 +257,25 @@ def test_get_drawers_pipeline_smoke():
 
 def test_get_drawers_transformop_applies_df_transform():
     from glyphsmith.legacy_kurgm.rstroke import RStroke
-    # T8 起 K_GOTHIC 为真 GothicFont（RStroke 会真画轮廓）；本测试只验证
-    # 分发语义，故用 a1=9（dfDrawFont case 9 无操作）的笔画占位
+    # Since T8 K_GOTHIC is a real GothicFont (RStroke really draws contours);
+    # this test only checks the dispatch semantics, so a stroke with a1=9
+    # (dfDrawFont case 9 is a no-op) stands in
     f = select_font(Shotai.K_GOTHIC)
     drawers = f.get_drawers([RStroke(9, 0, 0, 20, 50, 180, 50, 0, 0, 0, 0),
                              TransformOp(97, 0, 0, 0, 200, 200)])
     assert len(drawers) == 2
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
     before = [list(c) for c in o.contours]
-    drawers[0](o)                     # RStroke a1=9 → case 9 无操作
+    drawers[0](o)                     # RStroke a1=9 → case 9 no-op
     assert [list(c) for c in o.contours] == before
     drawers[1](o)                     # TransformOp → df_transform
     assert o.contours == [[(10.0, 180.0, 0), (30.0, 180.0, 0)]]
 
 
 def test_get_drawers_transformop_rotates_with_a3():
-    # Fix（task-7 关切 1）：TransformOp.a3 必须传进 df_transform——0:99:1 行经
-    # 管线与直接调 df_transform(a3=1)（K:53-58 rotate90）结果一致，而非 no-op
+    # Fix (task-7 concern 1): TransformOp.a3 must reach df_transform — the
+    # 0:99:1 row through the pipeline gives the same result as calling
+    # df_transform(a3=1) directly (K:53-58 rotate90), rather than a no-op
     f = select_font(Shotai.K_MINCHO)
     drawers = f.get_drawers([TransformOp(99, 1, 0, 0, 200, 200)])
     o = Outline.from_contours([[(10.0, 20.0, 0), (30.0, 20.0, 0)]])
@@ -269,20 +283,22 @@ def test_get_drawers_transformop_rotates_with_a3():
     assert o.contours == [[(180.0, 10.0, 0), (180.0, 30.0, 0)]]
 
 
-# ── T16 全量冒烟发现的移植缺口：push_polygon 的 JS floor 语义 ──
+# ── Port gap found by the T16 full smoke: push_polygon's JS floor semantics ──
 
 def test_push_polygon_nan_dropped_not_raised():
-    # K/polygons.ts:31-47：先 polygon.floor()（Math.floor(NaN)=NaN，不抛），
-    # 再逐点 isNaN 检查丢弃整个多边形。Python math.floor(NaN/±Inf) 抛异常
-    # → 全量 dump 27 个字形（zackroy-san_* 等）整字形 err，而 kurgm 能渲染。
-    # 铁律 1 直译：NaN/±Inf 穿透 floor；NaN 多边形丢弃；Inf 不拦截（源行为，
-    # 交由指纹层报 non-finite）。
+    # K/polygons.ts:31-47: polygon.floor() first (Math.floor(NaN)=NaN, no
+    # raise), then the per-point isNaN check drops the whole polygon. Python's
+    # math.floor(NaN/±Inf) raises → 27 glyphs in the full dump (zackroy-san_*
+    # etc.) errored out entirely while kurgm could render them. Hard rule 1,
+    # translated directly: NaN/±Inf pass through floor; NaN polygons are
+    # dropped; Inf is not intercepted (source behaviour, left to the fingerprint
+    # layer to report non-finite).
     from glyphsmith.legacy_kurgm.font.gothic_cd import push_polygon
 
     o = Outline()
-    push_polygon(o, [(10, 10, 0), (50, 10, 0), (50, 50, 0)])            # 正常
-    push_polygon(o, [(float("nan"), 10, 0), (50, 10, 0), (50, 50, 0)])  # NaN → 丢
-    push_polygon(o, [(float("inf"), 10, 0), (50, 10, 0), (50, 50, 0)])  # Inf → 留
+    push_polygon(o, [(10, 10, 0), (50, 10, 0), (50, 50, 0)])            # normal
+    push_polygon(o, [(float("nan"), 10, 0), (50, 10, 0), (50, 50, 0)])  # NaN → dropped
+    push_polygon(o, [(float("inf"), 10, 0), (50, 10, 0), (50, 50, 0)])  # Inf → kept
     assert len(o.contours) == 2
     assert o.contours[0] == [(10.0, 10.0, 0), (50.0, 10.0, 0), (50.0, 50.0, 0)]
     assert o.contours[1][0][0] == float("inf")

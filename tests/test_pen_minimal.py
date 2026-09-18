@@ -30,7 +30,13 @@ def test_reuses_expansion_for_refs():
     part = parse_kage2("1:0:0:0:0:200:10", "part")
     g = parse_kage2("99:0:0:0:20:100:120:part:0:0")
     r = _R(g)
-    r.parts[part.name] = part   # 简报笔误修正：_R 只装顶层字形，ref 部件须入 parts（简报里 part 已解析但未接线；逐字形态下 parts={"": g} → expand 跳过 ref → 0 轮廓，本测试对简报参考实现必失败，见 task-15-report「简报测试 1 处接线笔误」）
+    # Brief typo corrected: _R only holds the top-level glyph, so ref parts must
+    # go into parts as well (in the brief, part was parsed but never wired up;
+    # in the per-glyph form parts={"": g} → expand skips the ref → 0 contours,
+    # and this test necessarily fails against the brief's reference
+    # implementation — see task-15-report "one wiring typo in the brief's
+    # tests").
+    r.parts[part.name] = part
     out = get_backend("pen-minimal").render(r)
     assert len(out.contours) >= 1
 
@@ -42,18 +48,20 @@ def test_differs_from_legacy():
     assert compare(pen, leg).iou < 1.0
 
 
-# ── 补充测试（简报之外，锁定 v1 预留行为的边界）──────────────────────
+# ── Extra tests (beyond the brief, locking the edges of v1's reserved behaviour) ──
 
 def test_registered_by_default():
-    # 注册在 glyphsmith/__init__ 导入 pen_minimal（T8 教训：不 import 则 get_backend 抛 ValueError）
+    # registered because glyphsmith/__init__ imports pen_minimal (T8 lesson:
+    # without the import, get_backend raises ValueError)
     from glyphsmith.protocol import Backend
     assert "pen-minimal" in Backend.available()
 
 
 def test_ref_affine_placement():
-    # 复用 expand 的 affine：part 段 (0,0)-(200,10) 经 ref box (0,20)-(100,120)
-    # 映射为 (0,20)-(100,25)（x'=x/2, y'=20+y/2），等宽 8 描边四边形落在
-    # 该段 ±4 法向邻域内（x∈[0,100]±0.2，y∈[20,25]±4）
+    # reuses expand's affine: the part segment (0,0)-(200,10) maps through the
+    # ref box (0,20)-(100,120) to (0,20)-(100,25) (x'=x/2, y'=20+y/2), and the
+    # uniform-8 stroked quad falls within ±4 along the normal of that segment
+    # (x∈[0,100]±0.2, y∈[20,25]±4)
     part = parse_kage2("1:0:0:0:0:200:10", "part")
     g = parse_kage2("99:0:0:0:20:100:120:part:0:0")
     r = _R(g)
@@ -67,7 +75,7 @@ def test_ref_affine_placement():
 
 
 def test_multisegment_stroke_one_quad_per_segment():
-    # a1=2 折线：控制段 x1x2、x2x3 → 每段一个四边形
+    # a1=2 polyline: control segments x1x2, x2x3 → one quad per segment
     g = parse_kage2("2:0:0:20:20:180:20:100:120")
     out = get_backend("pen-minimal").render(_R(g))
     assert len(out.contours) == 2
@@ -82,49 +90,56 @@ def test_render_separated_per_stroke():
 
 
 def test_transform_op_rows_skipped():
-    # TransformOp 自 T7 起为 6 字段 NamedTuple，仍是 tuple 子类 → isinstance 判定成立
+    # since T7 TransformOp is a 6-field NamedTuple, still a tuple subclass → the
+    # isinstance test holds
     g = parse_kage2("1:0:0:20:50:180:50$0:99:0:0:0:200:200:rot:0:0")
     out = get_backend("pen-minimal").render(_R(g))
     assert len(out.contours) == 1
 
 
-# ── 终审 I2：warnings 回写与 legacy 对齐 ────────────────────────────
+# ── Final review I2: warnings write-back aligned with legacy ────────
 
 def test_raw_op_warnings_parity_with_legacy():
-    # 含 RawOp 行（首列 int 化失败的垃圾行）的字形两后端渲染后 warnings 应一致：
-    # raw op skipped 警告两后端都出现。此前 pen-minimal 不向 expand 传
-    # warnings，换后端后这类警告静默丢失。
-    # 夹具史：原为 "101:0:0:..."——gsftool 2c5dea2 起 a1 位域行是合法 Stroke
-    # （对齐 kurgm），不再产生 RawOp；改用真正的垃圾行 `-:`（首列 int() 失败）。
+    # For a glyph with a RawOp row (a junk row whose first column fails int),
+    # both backends must produce the same warnings after rendering: the "raw op
+    # skipped" warning appears on both. Previously pen-minimal did not pass
+    # warnings to expand, so switching backends silently lost this class of
+    # warning.
+    # Fixture history: it used to be "101:0:0:..." — since gsftool 2c5dea2,
+    # a1-bitfield rows are legal Strokes (aligned with kurgm) and no longer
+    # produce a RawOp; hence the switch to a genuinely junk row `-:` (whose
+    # first column fails int()).
     g = parse_kage2("-:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
     assert any(isinstance(op, RawOp) for op in g.ops), \
-        "夹具前提：`-:` 行须仍是 RawOp（首列 int 化失败）"
+        "fixture precondition: the `-:` row must still be a RawOp (first column fails int())"
     leg, pen = _R(g), _R(g)
     LegacyKurgmBackend().render(leg)
     get_backend("pen-minimal").render(pen)
-    assert leg.warnings, "legacy 应产生 raw op skipped 警告"
+    assert leg.warnings, "legacy should produce a raw op skipped warning"
     assert pen.warnings == leg.warnings
     assert any("raw op skipped" in w for w in pen.warnings)
 
 
 def test_render_separated_writes_back_warnings():
-    # render_separated 同样回写（missing part / raw op 类警告不悬空）
+    # render_separated writes back too (missing part / raw op warnings do not go missing)
     g = parse_kage2("-:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
     r = _R(g)
     get_backend("pen-minimal").render_separated(r)
     assert any("raw op skipped" in w for w in r.warnings)
 
 
-# ── gsftool 2c5dea2 下游：a1 位域行不再是 RawOp ─────────────────────
+# ── gsftool 2c5dea2 downstream: a1-bitfield rows are no longer RawOp ──
 
 def test_a1_opt_rows_are_strokes_now():
-    # 101 = 直线 + a1_100 选项位（kurgm 拆 a1_100/a1_opt 照画）：解析器放行后
-    # 应零警告、两后端都画出笔画。此前该行降级 RawOp → 两侧都跳过。
+    # 101 = a line + the a1_100 option bits (kurgm splits a1_100/a1_opt and draws
+    # it): once the parser lets it through there should be zero warnings and both
+    # backends should draw the stroke. Previously the row was downgraded to RawOp
+    # → both sides skipped it.
     g = parse_kage2("101:0:0:0:0:0:0$1:0:0:20:50:180:50", "optg")
     assert not any(isinstance(op, RawOp) for op in g.ops)
     leg, pen = _R(g), _R(g)
     lo = LegacyKurgmBackend().render(leg)
     po = get_backend("pen-minimal").render(pen)
     assert leg.warnings == [] and pen.warnings == []
-    assert lo.contours, "legacy 须画出 a1 位域笔画（旧语义下 0 轮廓）"
-    assert po.contours, "pen-minimal 须画出 a1 位域笔画"
+    assert lo.contours, "legacy must draw the a1-bitfield stroke (was 0 contours)"
+    assert po.contours, "pen-minimal must draw the a1-bitfield stroke"

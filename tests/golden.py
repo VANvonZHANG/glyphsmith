@@ -1,9 +1,12 @@
 # tests/golden.py
-"""golden 用例矩阵：逐字段镜像 KT/strokes.ts 的 buildCorpus()/GLYPH_CASES。
+"""The golden case matrix: a field-by-field mirror of KT/strokes.ts's
+buildCorpus()/GLYPH_CASES.
 
-⚠ GLYPH_CASES 的三组 buhin 数据串必须从 KT/strokes.ts:76-106 逐字符复制
-（glyph:u6f22 / glyph:stretch / glyph:transform，含 names 数组）。本文件不
-内联这些串以防转录笔误——实现者打开源文件抄录。
+⚠ The three buhin data strings in GLYPH_CASES must be copied character for
+character from KT/strokes.ts:76-106 (glyph:u6f22 / glyph:stretch /
+glyph:transform, including the names arrays). This file does not inline those
+strings, to avoid transcription typos — the implementer opens the source file
+and copies them.
 """
 from pathlib import Path
 
@@ -53,7 +56,7 @@ GLYPH_CASES = [
 
 
 def glyph_cases():
-    """→ [(id, buhin_dict, names)]；names 为需渲染的字形名列表。"""
+    """→ [(id, buhin_dict, names)]; names is the list of glyph names to render."""
     return [
         (g["id"], g["buhin"], g["names"] if "names" in g else [g["name"]])
         for g in GLYPH_CASES
