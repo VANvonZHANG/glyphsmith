@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/expansion.py
+# src/glyphsmith/legacy_kurgm/expansion.py
 """ref 递归展开：affine 缩放 + stretch + 环检测 + TransformOp。← K/kage.ts"""
 from __future__ import annotations
 

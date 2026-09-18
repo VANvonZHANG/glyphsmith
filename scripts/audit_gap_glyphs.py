@@ -124,10 +124,10 @@ def py_fingerprint(data: str, *, baseline: bool = False) -> str:
     if baseline:
         data = strip_gap_rows(data)
 
-    from gsrender.legacy_kurgm.expansion import expand
-    from gsrender.legacy_kurgm.fingerprint import fingerprint
-    from gsrender.legacy_kurgm.font import Shotai, select_font
-    from gsrender.outline import Outline
+    from glyphsmith.legacy_kurgm.expansion import expand
+    from glyphsmith.legacy_kurgm.fingerprint import fingerprint
+    from glyphsmith.legacy_kurgm.font import Shotai, select_font
+    from glyphsmith.outline import Outline
 
     g = parse_kage2(data)
     font = select_font(Shotai.K_MINCHO)

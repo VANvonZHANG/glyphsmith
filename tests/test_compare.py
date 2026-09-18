@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from gsrender.compare import compare, compare_separated, rasterize
-from gsrender.outline import Outline
+from glyphsmith.compare import compare, compare_separated, rasterize
+from glyphsmith.outline import Outline
 
 
 def _square(x0=20, y0=20, x1=180, y1=180):

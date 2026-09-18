@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/font/mincho.py
+# src/glyphsmith/legacy_kurgm/font/mincho.py
 """MinchoFont：K/font/mincho/index.ts 的 adjustStrokes 七连管（T9）。
 
 明朝体「看邻居笔画」的书法规则核心——渲染前先对全字每笔算六个调整量
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 from ..expansion import TransformOp
 from ..geom2d import _round

@@ -1,4 +1,4 @@
-# src/gsrender/outline.py
+# src/glyphsmith/outline.py
 """共享轮廓结构：legacy 与 pen 两后端的统一输出。"""
 Pt = tuple[float, float, int]      # (x, y, off)：off=1 为 off-curve（TrueType 惯例）
 Contour = list[Pt]

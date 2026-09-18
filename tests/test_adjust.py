@@ -10,9 +10,9 @@ uroko/tate 用例对拍为 0 vs 0（空断言），已换成真触发几何；ki
 a2=32 在 kage 列序是第 2 列，即 "2:32:0:..."）。
 """
 from gsf.kage2 import parse_kage2
-from gsrender.legacy_kurgm.expansion import expand
-from gsrender.legacy_kurgm.font import MinchoFont, Shotai, select_font
-from gsrender.legacy_kurgm.rstroke import RStroke
+from glyphsmith.legacy_kurgm.expansion import expand
+from glyphsmith.legacy_kurgm.font import MinchoFont, Shotai, select_font
+from glyphsmith.legacy_kurgm.rstroke import RStroke
 
 
 def _adjusted(data: str):
@@ -98,7 +98,7 @@ def test_adjust_kirikuchi_only_with_horizontal_at_start():
 
 # ── get_drawers 分发（index.ts:356-361）───────────────────────
 def test_mincho_get_drawers_draws_strokes():
-    from gsrender.outline import Outline
+    from glyphsmith.outline import Outline
 
     font = select_font(Shotai.K_MINCHO)
     assert isinstance(font, MinchoFont)
@@ -110,7 +110,7 @@ def test_mincho_get_drawers_draws_strokes():
 
 def test_mincho_adjust_strokes_passthrough_transformop():
     # 0:97/98/99 行不在 adjust 范围（源中 a1_100=0 对七函数全惰性），原样透传
-    from gsrender.legacy_kurgm.expansion import TransformOp
+    from glyphsmith.legacy_kurgm.expansion import TransformOp
 
     items = _strokes("1:0:0:40:100:180:100$0:99:1:40:100:180:100")
     assert len(items) == 2 and isinstance(items[1], TransformOp)

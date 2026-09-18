@@ -1,7 +1,7 @@
 # tests/test_geom_rstroke.py
 from gsf.model import Stroke
-from gsrender.legacy_kurgm.geom2d import is_cross, is_cross_box
-from gsrender.legacy_kurgm.rstroke import RStroke, stretch
+from glyphsmith.legacy_kurgm.geom2d import is_cross, is_cross_box
+from glyphsmith.legacy_kurgm.rstroke import RStroke, stretch
 
 def test_is_cross_basic():
     assert is_cross(0, 0, 10, 10, 0, 10, 10, 0) is True    # 对角线相交
@@ -107,7 +107,7 @@ def test_expand_box_nan_poison():
     # K/kage.ts getBox 聚合同款：Math.min(200, NaN) = NaN（初值 200/0 照抄，
     # 任一部件 stroke box NaN → 聚合 box NaN → 外层 stretch 全 NaN）
     import math
-    from gsrender.legacy_kurgm.expansion import _box
+    from glyphsmith.legacy_kurgm.expansion import _box
     st = RStroke.from_gsf(Stroke(a1=1, a2=0, a3=0, pts=((10, 10), (20, 20))))
     st.x1 = float("nan")
     b = _box([st])

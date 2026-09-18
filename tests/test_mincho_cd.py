@@ -5,7 +5,7 @@
 """
 import math
 
-from gsrender.legacy_kurgm.font.mincho_cd import _js_index
+from glyphsmith.legacy_kurgm.font.mincho_cd import _js_index
 
 
 def test_js_index_negative_returns_nan():

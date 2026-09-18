@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/font/gothic.py
+# src/glyphsmith/legacy_kurgm/font/gothic.py
 """GothicFont：K/font/gothic/index.ts（dfDrawFont + Gothic 类）的直译。
 
 adjustStrokes 结论（读源确认，gothic/index.ts:168 vs mincho/index.ts:356）：
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 from .base import Drawer, Font, Shotai
 from .gothic_cd import (_hypot, cd_draw_bezier, cd_draw_curve, cd_draw_line,

@@ -1,4 +1,4 @@
-# src/gsrender/corpus.py
+# src/glyphsmith/corpus.py
 """语料装载器：GSF 文件 / dump_newest_only 流式扫描 + 闭包解析。v1 零持久化。"""
 from __future__ import annotations
 

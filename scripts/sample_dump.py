@@ -1,4 +1,4 @@
-# scripts/sample_dump.py —— 可复现抽样（gsr sample 的雏形）
+# scripts/sample_dump.py —— 可复现抽样（glyphsmith sample 的雏形）
 """dump 抽样器 + 残余垃圾行过滤（T12 交叉验证的语料侧）。
 
 sample(): dump_newest_only.txt → (name, data) 可复现随机样本。

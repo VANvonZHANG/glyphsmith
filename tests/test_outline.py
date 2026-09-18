@@ -1,5 +1,5 @@
 # tests/test_outline.py
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 def test_push_and_contours():
     o = Outline()

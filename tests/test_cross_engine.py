@@ -16,10 +16,10 @@ from pathlib import Path
 import pytest
 from gsf.kage2 import parse_kage2
 
-from gsrender.legacy_kurgm.expansion import expand
-from gsrender.legacy_kurgm.fingerprint import fingerprint
-from gsrender.legacy_kurgm.font import Shotai, select_font
-from gsrender.outline import Outline
+from glyphsmith.legacy_kurgm.expansion import expand
+from glyphsmith.legacy_kurgm.fingerprint import fingerprint
+from glyphsmith.legacy_kurgm.font import Shotai, select_font
+from glyphsmith.outline import Outline
 
 ROOT = Path(__file__).resolve().parent.parent
 DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
@@ -136,7 +136,7 @@ NAN_FLOOR_GLYPHS = [
 def test_nan_floor_glyphs_match_kurgm():
     # 桥接对拍：kurgm 渲染（非 ERROR）→ 我们须指纹全等（修复前是整字形
     # ValueError，跑不到指纹层）
-    from gsrender.corpus import Corpus
+    from glyphsmith.corpus import Corpus
     corpus = Corpus.from_dump(DUMP)
     missing = [n for n in NAN_FLOOR_GLYPHS if n not in corpus._data]
     assert missing == [], f"dump 缺名字（dump 版本漂移？）: {missing}"
@@ -214,7 +214,7 @@ def test_self_snapshot_glyphs_match_kurgm():
     # 101: 行（a1_opt 变体，gsf 降级 RawOp 被跳过、kurgm 照画 → 假 mismatch）
     # 被 T12/本条排除；修复后该行是合法 Stroke，与 kurgm 指纹实测全等
     # （5 轮廓 38 点）→ 移出排除，94/94 全比。
-    from gsrender.corpus import Corpus
+    from glyphsmith.corpus import Corpus
     corpus = Corpus.from_dump(DUMP)
     missing = [n for n in SELF_SNAPSHOT_GLYPHS if n not in corpus._data]
     assert missing == [], f"dump 缺名字（dump 版本漂移？）: {missing}"
@@ -287,7 +287,7 @@ def _closure_buhin(corpus, name):
     @版本兜底是解析语义的一部分——把 @版本名也塞进 buhin（映射到兜底目标
     数据），两侧部件集对齐后比较的才是「绘制算术」本身。
     """
-    from gsrender.legacy_kurgm.expansion import ref_names
+    from glyphsmith.legacy_kurgm.expansion import ref_names
     r = corpus.resolve(name)
     buhin = {p: corpus._data[p] for p in r.parts}
     for p, g in r.parts.items():
@@ -308,7 +308,7 @@ def test_closure_zerodiv_glyphs_match_kurgm():
     # T12/本条排除；修复后这些行是合法 Stroke，实测 90 轮廓 873 点全等 →
     # 移出排除。另有 35 例（lp_*/hs_* 闭包引用 hs_reserved 等垃圾行字形）
     # 也随口径收窄回归比对：实测全部全等（0 NEQ、桥接侧 0 ERROR）。
-    from gsrender.corpus import Corpus
+    from glyphsmith.corpus import Corpus
     corpus = Corpus.from_dump(DUMP)
     missing = [n for n in CLOSURE_ZERODIV_GLYPHS if n not in corpus._data]
     assert missing == [], f"dump 缺名字（dump 版本漂移？）: {missing}"

@@ -1,7 +1,7 @@
 # tests/test_fingerprint.py
 import pytest
-from gsrender.legacy_kurgm.fingerprint import js_num, fingerprint
-from gsrender.outline import Outline
+from glyphsmith.legacy_kurgm.fingerprint import js_num, fingerprint
+from glyphsmith.outline import Outline
 
 @pytest.mark.parametrize("v,expected", [
     (0.0, "0"), (200.0, "200"), (-0.0, "0"), (5.5, "5.5"),

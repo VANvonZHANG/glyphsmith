@@ -1,10 +1,10 @@
-# src/gsrender/legacy_kurgm/font/transform.py
+# src/glyphsmith/legacy_kurgm/font/transform.py
 """dfTransform：type-0 行的 97/98/99 翻转/旋转。← K/font/mincho/index.ts:37-72"""
 from __future__ import annotations
 
 import math
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 # K/polygon.ts:33 Polygon._precision：多边形内部以 10 倍定点坐标存储，
 # translate/rotate/reflect/floor 全在内部坐标上进行，读取时再 /10。

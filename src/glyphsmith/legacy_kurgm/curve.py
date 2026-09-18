@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/curve.py
+# src/glyphsmith/legacy_kurgm/curve.py
 """K/curve.ts 的逐行移植：divideCurve（:4-23）/ findOffCurve（:27-49）。
 
 curve.ts 第三个导出 generateFattenCurve（:53-97）已随 T8 在

@@ -1,11 +1,11 @@
-# gsrender
+# glyphsmith
 
 GSF 字形渲染器：agent 原生 CLI + Python 库。双后端：legacy-kurgm（忠实移植）
 与 pen-minimal（等宽描边骨架预览，v2 pen 后端的接口占位）。
 
 ## 许可证与谱系（重要）
 
-本项目按 **GPLv3** 发布。`src/gsrender/legacy_kurgm/` 是以下引擎算法的忠实
+本项目按 **GPLv3** 发布。`src/glyphsmith/legacy_kurgm/` 是以下引擎算法的忠实
 Python 移植，行为基准为 kurgm 版：
 
 - **kurgm/kage-engine**（TypeScript，npm `@kurgm/kage-engine`）——移植基准
@@ -20,24 +20,24 @@ Python 移植，行为基准为 kurgm 版：
 
     pip install -e ../gsftool -e .     # gsftool 提供 gsf.kage2 解析
 
-（本机 shell 若把 `gsr` 别名占用，如 `git svn rebase`，可用
-`python -m gsrender.cli` 等价调用。）
+（console script 未在 PATH 时可用
+`python -m glyphsmith.cli` 等价调用。）
 
-## 用法（gsr CLI）
+## 用法（glyphsmith CLI）
 
 stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
 0 ok / 2 usage（含写盘失败、参数非法）/ 3 unknown glyph / 4 cycle。
 
     # 语料：GSF 文本文件或 GlyphWiki dump_newest_only.txt（自动识别）
-    gsr render u4e2d --corpus data/dump_newest_only.txt            # stdout 出 SVG
-    gsr render u4e2d --out png --corpus data/dump_newest_only.txt  # 写 u4e2d.png
-    gsr render u4e2d --backend pen-minimal --font sans ...         # 双后端切换
-    gsr resolve u4e2d --corpus ...          # ref 闭包 / 悬空引用 / 最深链
-    gsr inspect u4e2d --corpus ...          # ops 计数（stroke/ref/raw）+ 名字 meta
-    gsr list --like 'u6f2*' --corpus ...    # 名字前缀检索
-    gsr sample --n 8 --seed 1 --corpus ...  # 可复现随机抽样
-    gsr compare a b --corpus ...            # 栅格 IoU + 逐笔结构 diff
-    gsr batch --out outdir --workers 8 --corpus data/dump_newest_only.txt
+    glyphsmith render u4e2d --corpus data/dump_newest_only.txt            # stdout 出 SVG
+    glyphsmith render u4e2d --out png --corpus data/dump_newest_only.txt  # 写 u4e2d.png
+    glyphsmith render u4e2d --backend pen-minimal --font sans ...         # 双后端切换
+    glyphsmith resolve u4e2d --corpus ...          # ref 闭包 / 悬空引用 / 最深链
+    glyphsmith inspect u4e2d --corpus ...          # ops 计数（stroke/ref/raw）+ 名字 meta
+    glyphsmith list --like 'u6f2*' --corpus ...    # 名字前缀检索
+    glyphsmith sample --n 8 --seed 1 --corpus ...  # 可复现随机抽样
+    glyphsmith compare a b --corpus ...            # 栅格 IoU + 逐笔结构 diff
+    glyphsmith batch --out outdir --workers 8 --corpus data/dump_newest_only.txt
                                            # 整库批量渲染（multiprocessing）
 
 字形名含 `/` 等路径分隔符时写盘名自动清洗（`a/b` → `a_b.png`）。批量口径：
@@ -50,8 +50,8 @@ stdout 恒单行 JSON：`{"status","data","warnings","hints"}`；退出码
 | `legacy-kurgm` | kurgm/kage-engine 忠实移植：golden 矩阵 7614/7614 指纹全等（宋/黑 × 直线/曲线 × 头尾型），真实 dump 1000 例与 Node 原版指纹全等；旧「白名单缺口」字形 1,523 例专项对拍 1,522 例全等（修复见下，唯一残差为源数据 `116p` 坐标笔误） |
 | `pen-minimal` | 等宽描边骨架预览（Levien 词汇最小子集），验证 Backend 协议的通用性；v2 变宽 pen 后端见 `docs/pen-backend-design.md` |
 
-两者经同一 `Backend` 协议注册（`gsrender.protocol.get_backend`），CLI
-`--backend` 与 `Renderer(backend=...)` 全链路可切换；`gsr render --backend
+两者经同一 `Backend` 协议注册（`glyphsmith.protocol.get_backend`），CLI
+`--backend` 与 `Renderer(backend=...)` 全链路可切换；`glyphsmith render --backend
 both` 双后端各渲一次并出对比（`data.svg_legacy`/`data.svg_pen` 双键 +
 `data.backends` 列表；`--out png/outline.json` 时落 `{name}.legacy.*` 与
 `{name}.pen.*` 两个文件）。已知偏差（v1 裁剪）：规格 §5.1 的输入形态
@@ -115,6 +115,6 @@ self-snapshot 94/94）。
 - box 聚合 min/max：JS `Math.min` 的 NaN 传染语义（84 字形多画）；
   与 `_round`/指纹 `js_num` 的 NaN/Infinity 穿透。
 
-非自身引用 `X@N`（该版本行不在 newest dump）时，gsrender 回退渲染 newest X
+非自身引用 `X@N`（该版本行不在 newest dump）时，glyphsmith 回退渲染 newest X
 并发 `version ref fallback` 警告（corpus.py），而 kurgm 的 kBuhin 为精确匹配、
 查不到即静默跳过该部件——两侧长期存在的语义差异面。

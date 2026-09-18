@@ -1,4 +1,4 @@
-# src/gsrender/pen_minimal.py
+# src/glyphsmith/pen_minimal.py
 """pen-minimal：等宽描边骨架预览后端（Levien 词汇最小子集：parallel+cap）。
 
 v2 pen 后端（关系图+风格文件+变宽 nib）的接口占位实现，
@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import math
 
-from gsrender.outline import Outline
-from gsrender.protocol import Backend, RenderOptions
+from glyphsmith.outline import Outline
+from glyphsmith.protocol import Backend, RenderOptions
 
 WIDTH = 8.0
 

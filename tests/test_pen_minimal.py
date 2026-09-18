@@ -2,9 +2,9 @@
 from gsf.kage2 import parse_kage2
 from gsf.model import RawOp
 
-from gsrender.compare import compare
-from gsrender.legacy_kurgm import LegacyKurgmBackend
-from gsrender.protocol import get_backend
+from glyphsmith.compare import compare
+from glyphsmith.legacy_kurgm import LegacyKurgmBackend
+from glyphsmith.protocol import get_backend
 
 
 class _R:
@@ -45,8 +45,8 @@ def test_differs_from_legacy():
 # ── 补充测试（简报之外，锁定 v1 预留行为的边界）──────────────────────
 
 def test_registered_by_default():
-    # 注册在 gsrender/__init__ 导入 pen_minimal（T8 教训：不 import 则 get_backend 抛 ValueError）
-    from gsrender.protocol import Backend
+    # 注册在 glyphsmith/__init__ 导入 pen_minimal（T8 教训：不 import 则 get_backend 抛 ValueError）
+    from glyphsmith.protocol import Backend
     assert "pen-minimal" in Backend.available()
 
 

@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/rstroke.py
+# src/glyphsmith/legacy_kurgm/rstroke.py
 """RStroke：K/stroke.ts 的忠实移植（渲染语义解码）。"""
 from __future__ import annotations
 

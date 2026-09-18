@@ -1,7 +1,7 @@
 # pen 后端设计（v2 预留，v1 锁接口）
 
-> 摘自父仓库设计文档 §4.2（`/home/zhangfan/Project/20260909_KAGE/docs/superpowers/specs/2026-09-14-gsrender-design.md`）。
-> v1 的交付物只有 pen-minimal 预览后端（`src/gsrender/pen_minimal.py`：等宽
+> 摘自父仓库设计文档 §4.2（`/home/zhangfan/Project/20260909_KAGE/docs/superpowers/specs/2026-09-14-glyphsmith-design.md`）。
+> v1 的交付物只有 pen-minimal 预览后端（`src/glyphsmith/pen_minimal.py`：等宽
 > 描边 + butt 端帽，逐段四边形，nonzero 并集即 Levien「弱正确」级）——它证明
 > Backend 协议不是 legacy 专属形状；graph/style/nib 三模块与风格文件引擎
 > 均为 v2 范围（设计 §8「明确不做」）。
@@ -41,7 +41,7 @@ rules:                      # 声明式结字规则（作用于关系图）
 
 三语对照决议（日中英书法字体术语 ↔ GSF 枚举 ↔ v2 词汇）见父仓库笔记 15：
 [`../15-书法字体术语三语对照.md`](../15-书法字体术语三语对照.md)
-（路径相对 gsrender 仓库根目录）。
+（路径相对 glyphsmith 仓库根目录）。
 
 ## v1 三件预留
 

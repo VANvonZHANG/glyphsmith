@@ -1,4 +1,4 @@
-# src/gsrender/protocol.py
+# src/glyphsmith/protocol.py
 """Backend 协议：双后端（legacy-kurgm / pen*）的注册与调度。"""
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
-    from gsrender.corpus import ResolveResult
-    from gsrender.outline import Outline
+    from glyphsmith.corpus import ResolveResult
+    from glyphsmith.outline import Outline
 
 
 @dataclass(frozen=True)

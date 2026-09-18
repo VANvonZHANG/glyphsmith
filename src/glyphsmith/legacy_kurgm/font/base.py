@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/font/base.py
+# src/glyphsmith/legacy_kurgm/font/base.py
 """字体基座：Shotai / FontParams / Font / _StubFont。
 
 ← K/font/shotai.ts、K/font/index.ts（FontInterface/select）、
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 from ..expansion import TransformOp
 from ..rstroke import RStroke

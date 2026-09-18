@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from gsrender.corpus import Corpus, UnknownGlyphError
-from gsrender.legacy_kurgm.expansion import CycleError, TransformOp, expand
+from glyphsmith.corpus import Corpus, UnknownGlyphError
+from glyphsmith.legacy_kurgm.expansion import CycleError, TransformOp, expand
 
 REAL_DUMP = Path("/home/zhangfan/Project/20260909_KAGE/data/dump_newest_only.txt")
 

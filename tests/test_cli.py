@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from gsrender.cli import main
+from glyphsmith.cli import main
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ def test_compare_stroke_count_mismatch_warns(tmp_path):
     assert "stroke count mismatch: 1 vs 2; per_stroke skipped" in payload["warnings"]
 
 
-# ── T16：gsr batch（批量渲染子命令）──
+# ── T16：glyphsmith batch（批量渲染子命令）──
 
 def test_batch_writes_svds(tmp_path):
     p = tmp_path / "c.gsf"

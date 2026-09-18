@@ -1,4 +1,4 @@
-# src/gsrender/compare.py
+# src/glyphsmith/compare.py
 """造字闭环的比对端：栅格 IoU + 逐笔结构度量。"""
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image, ImageDraw
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 
 def rasterize(outline: Outline, size: int = 256) -> Image.Image:

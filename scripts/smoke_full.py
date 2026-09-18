@@ -40,9 +40,9 @@ _STATE: dict = {}               # worker initializer 填充（串行版在主进
 def _init_worker(dump, backend_name, closure):
     from importlib import import_module
 
-    from gsrender.batch import _BACKEND_MODULES
-    from gsrender.corpus import Corpus
-    from gsrender.protocol import get_backend
+    from glyphsmith.batch import _BACKEND_MODULES
+    from glyphsmith.corpus import Corpus
+    from glyphsmith.protocol import get_backend
 
     mod = _BACKEND_MODULES.get(backend_name)
     if mod is not None:                 # 未知名留给 get_backend 报 ValueError
@@ -55,7 +55,7 @@ def _init_worker(dump, backend_name, closure):
 def _render_chunk(names):
     """计数一个名字块 → (ok, empty, err, 样例错误)。串行/多进程共用。"""
     from gsf.kage2 import parse_kage2
-    from gsrender.corpus import ResolveResult
+    from glyphsmith.corpus import ResolveResult
 
     corpus, backend = _STATE["corpus"], _STATE["backend"]
     ok = empty = err = 0

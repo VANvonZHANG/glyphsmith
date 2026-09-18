@@ -1,13 +1,13 @@
 # tests/test_protocol.py
 import pytest
-from gsrender.protocol import RenderOptions, Backend, get_backend, Renderer
+from glyphsmith.protocol import RenderOptions, Backend, get_backend, Renderer
 
 
 class DummyBackend(Backend):
     name = "dummy"
 
     def render(self, result, opts=None):
-        from gsrender.outline import Outline
+        from glyphsmith.outline import Outline
         o = Outline(); o.new_contour(); o.push(0, 0); o.push(10, 0)
         return o
 

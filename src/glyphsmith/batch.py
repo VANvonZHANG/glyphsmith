@@ -1,4 +1,4 @@
-# src/gsrender/batch.py
+# src/glyphsmith/batch.py
 """multiprocessing 批量渲染：整库 → outdir/*.svg + 统计。
 
 对简报骨架的现状适配（公开签名与 stats 口径不变）：
@@ -21,8 +21,8 @@ from itertools import islice
 from pathlib import Path
 
 _BACKEND_MODULES = {                 # 后端名 → 注册所在模块（worker 内 import）
-    "legacy-kurgm": "gsrender.legacy_kurgm",
-    "pen-minimal": "gsrender.pen_minimal",
+    "legacy-kurgm": "glyphsmith.legacy_kurgm",
+    "pen-minimal": "glyphsmith.pen_minimal",
 }
 _WINDOW = 4096                       # 单批提交任务数（在途内存上界）
 _CHUNKSIZE = 64                      # ex.map 分发粒度（简报值）
@@ -32,8 +32,8 @@ def _render_one(job):
     """渲染单字形（worker 进程）。任何异常 → (name, "", True, err)，不冒泡。"""
     name, data, backend_name = job
     from gsf.kage2 import parse_kage2
-    from gsrender.corpus import ResolveResult
-    from gsrender.protocol import get_backend
+    from glyphsmith.corpus import ResolveResult
+    from glyphsmith.protocol import get_backend
 
     try:
         mod = _BACKEND_MODULES.get(backend_name)
@@ -56,8 +56,8 @@ def batch_render(corpus_path, outdir, *, backend="legacy-kurgm",
     批次（批量口径；outdir mkdir 失败则直接抛 OSError，由 CLI 层转 exit 2，
     与 M2 单字形契约一致）。
     """
-    from gsrender.cli import _safe_filename
-    from gsrender.corpus import Corpus
+    from glyphsmith.cli import _safe_filename
+    from glyphsmith.corpus import Corpus
 
     corpus = Corpus.from_dump(corpus_path) if dump else Corpus.from_gsf(corpus_path)
     outdir = Path(outdir)

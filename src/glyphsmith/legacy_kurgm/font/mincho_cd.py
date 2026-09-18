@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/font/mincho_cd.py
+# src/glyphsmith/legacy_kurgm/font/mincho_cd.py
 """cdDrawU 家族：K/font/mincho/cd.ts（847 行）的逐 case 直译。
 
 与 gothic_cd 的分工：共享工具（normalize/_Pen/push_polygon/
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import math
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 from ..curve import divide_curve as _divide_curve
 from ..curve import find_offcurve as _find_offcurve

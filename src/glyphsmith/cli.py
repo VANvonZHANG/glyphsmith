@@ -1,8 +1,8 @@
-# src/gsrender/cli.py
-"""gsr —— agent 友好 CLI。统一契约：{"status","data","warnings","hints"}。
+# src/glyphsmith/cli.py
+"""glyphsmith —— agent 友好 CLI。统一契约：{"status","data","warnings","hints"}。
 
 stdout 恒单行 JSON；退出码 0 ok / 2 usage（argparse 自带 + 未知 font/backend
-+ 语料文件缺失）/ 3 unknown glyph（hints 附 `gsr list --like ...` 补救动作）/
++ 语料文件缺失）/ 3 unknown glyph（hints 附 `glyphsmith list --like ...` 补救动作）/
 4 cycle（data.error 携带环路径）。
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import json
 import random
 import sys
 
-import gsrender.legacy_kurgm  # noqa: F401  注册 legacy-kurgm 后端（不 import 则 get_backend 抛 ValueError，T8 审查发现）
+import glyphsmith.legacy_kurgm  # noqa: F401  注册 legacy-kurgm 后端（不 import 则 get_backend 抛 ValueError，T8 审查发现）
 
 FONT_ALIAS = {"serif": "mincho", "sans": "gothic",
               "mincho": "mincho", "gothic": "gothic"}
@@ -34,7 +34,7 @@ def _safe_filename(name: str) -> str:
     """字形名 → 安全文件名：路径分隔符（/、\\ 及 os 层 sep/altsep）换 `_`。
 
     T14 审查 M2：GlyphWiki 名含 `/` 时曾直接拼进写盘路径（render --out png
-    raw traceback）。gsr batch（T16）与本处共用同一助手。
+    raw traceback）。glyphsmith batch（T16）与本处共用同一助手。
     """
     import os
     for sep in {"/", "\\", os.sep, os.altsep}:
@@ -45,14 +45,14 @@ def _safe_filename(name: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="gsr", description="GSF 字形渲染器：stdout 单行 JSON 契约，agent 原生")
+        prog="glyphsmith", description="GSF 字形渲染器：stdout 单行 JSON 契约，agent 原生")
     p.add_argument("--corpus", default="glyphwiki-newest.gsf",
                    help="语料：GSF 文本文件或 GlyphWiki dump_newest_only.txt")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def sp(name, help):
         s = sub.add_parser(name, help=help)
-        # 子命令位也收 --corpus（简报 hints/测试均 `gsr <cmd> --corpus ...` 形态）；
+        # 子命令位也收 --corpus（简报 hints/测试均 `glyphsmith <cmd> --corpus ...` 形态）；
         # SUPPRESS：子位缺省时不覆写主位已设值，两个位置都可用。
         s.add_argument("--corpus", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         return s
@@ -88,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 # ── 各命令主体：返回 (data, warnings)，错误经异常冒泡由 main 统一接管 ──
 def _make_renderer(args):
-    from gsrender import Renderer
+    from glyphsmith import Renderer
     font = FONT_ALIAS.get(args.font)
     if font is None:
         _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
@@ -105,8 +105,8 @@ def _render_both(args, r):
     """`--backend both`（终审 I1）：两后端各渲一次并出对比——CLI 层组合，
     Renderer/协议层不动。svg 内联双键；png/outline.json 落
     {name}.legacy.*/{name}.pen.* 两个文件（写盘契约与单后端一致：exit 2 + JSON）。"""
-    from gsrender import Renderer
-    from gsrender.compare import rasterize
+    from glyphsmith import Renderer
+    from glyphsmith.compare import rasterize
     font = FONT_ALIAS.get(args.font)
     if font is None:
         _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
@@ -142,7 +142,7 @@ def _render_both(args, r):
 
 
 def _cmd_render(args, corpus):
-    from gsrender.compare import rasterize
+    from glyphsmith.compare import rasterize
     r = corpus.resolve(args.name)
     if args.backend == "both":         # 终审 I1：双后端并渲出对比
         return _render_both(args, r)
@@ -173,8 +173,8 @@ def _closure_depth(corpus, name: str) -> int:
     与 Corpus._collect 同口径解析引用目标（含 @版本兜底基名）；悬空引用
     （两边都不在语料）不计层。resolve 已证无环，memo 占位仅作保险。
     """
-    from gsrender.corpus import UnknownGlyphError
-    from gsrender.legacy_kurgm.expansion import ref_names
+    from glyphsmith.corpus import UnknownGlyphError
+    from glyphsmith.legacy_kurgm.expansion import ref_names
     memo: dict[str, int] = {}
 
     def dfs(n: str) -> int:
@@ -242,7 +242,7 @@ def _cmd_sample(args, corpus):
 
 
 def _cmd_compare(args, corpus):
-    from gsrender.compare import compare, compare_separated
+    from glyphsmith.compare import compare, compare_separated
     renderer = _make_renderer(args)
     ra, rb = corpus.resolve(args.a), corpus.resolve(args.b)
     result = compare(renderer.render(ra), renderer.render(rb))
@@ -276,8 +276,8 @@ def _looks_like_dump(path: str) -> bool:
 def _cmd_batch(args, _corpus=None):
     # 语料由 batch_render 自装载（dump 自动识别）：main 的 from_gsf 预载对
     # batch 既浪费（317MB dump 再读一遍）又常不适用（dump 格式）。
-    from gsrender.batch import batch_render
-    from gsrender.protocol import get_backend
+    from glyphsmith.batch import batch_render
+    from glyphsmith.protocol import get_backend
     if args.workers < 1:                # T14 审查 M2 同款：参数层校验
         _fail(2, f"--workers must be >= 1, got {args.workers}")
     try:                                # 未知 backend → exit 2（模块头契约）
@@ -297,8 +297,8 @@ def _cmd_batch(args, _corpus=None):
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    from gsrender.corpus import Corpus, UnknownGlyphError
-    from gsrender.legacy_kurgm.expansion import CycleError
+    from glyphsmith.corpus import Corpus, UnknownGlyphError
+    from glyphsmith.legacy_kurgm.expansion import CycleError
 
     try:
         if args.cmd == "batch":        # batch 自带语料装载（见 _cmd_batch）
@@ -313,15 +313,15 @@ def main(argv: list[str] | None = None) -> None:
     except OSError as e:         # 终审 M6：目录/无权限等 OSError 家族（FileNotFoundError
                                 # 仅其一）统一 exit 2 + JSON，不再 raw traceback
         _fail(2, f"cannot open corpus {args.corpus}: {e}",
-              hints=[{"action": "gsr list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
+              hints=[{"action": "glyphsmith list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
                       "reason": "用 --corpus 指定语料文件"}])
     except UnknownGlyphError as e:
         _fail(3, str(e), hints=[
-            {"action": f"gsr list --corpus {args.corpus} --like '{e.name[:4]}*'",
+            {"action": f"glyphsmith list --corpus {args.corpus} --like '{e.name[:4]}*'",
              "reason": "检查拼写或变体"}])
     except CycleError as e:
         _fail(4, "cycle: " + " -> ".join(e.path), hints=[
-            {"action": f"gsr resolve --corpus {args.corpus} {e.path[0]}",
+            {"action": f"glyphsmith resolve --corpus {args.corpus} {e.path[0]}",
              "reason": "环路径见 data.error；语料需修环后重试"}])
     _emit("ok", data, warnings=warnings)
     sys.exit(0)                        # 成功也走 SystemExit（code=0），契约可预测

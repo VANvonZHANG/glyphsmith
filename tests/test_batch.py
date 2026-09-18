@@ -2,7 +2,7 @@
 """T16：multiprocessing 批量渲染。冒烟口径：单字形任何异常记录不中断。"""
 import pytest
 
-from gsrender.batch import batch_render
+from glyphsmith.batch import batch_render
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ def test_batch_serial_matches_parallel(tmp_path, eight):
 
 def test_batch_slash_name_sanitized(tmp_path):
     # 文件名清洗与 cli._safe_filename（T14 审查 M2）同一助手
-    from gsrender.cli import _safe_filename
+    from glyphsmith.cli import _safe_filename
     assert _safe_filename("a/b") == "a_b"
     p = tmp_path / "c.gsf"
     p.write_text("gsf/1\nglyph a/b\nstroke line head flat tail flat (10,10)->(100,60)\n",

@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/fingerprint.py
+# src/glyphsmith/legacy_kurgm/fingerprint.py
 """golden 指纹：轮廓数 顶点数 sha1。哈希串格式逐字符镜像 KT/strokes.ts:153-172。"""
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import math
 from decimal import Decimal
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 
 def js_num(v: float) -> str:

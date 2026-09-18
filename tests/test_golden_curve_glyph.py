@@ -16,11 +16,11 @@ ERROR 豁免逻辑同 gothic 模板：drawer 抛异常且 golden 亦为 ERROR �
 """
 import pytest
 from gsf.kage2 import parse_kage2
-from gsrender.legacy_kurgm import LegacyKurgmBackend   # import 即注册
-from gsrender.legacy_kurgm.expansion import expand
-from gsrender.legacy_kurgm.fingerprint import fingerprint
-from gsrender.legacy_kurgm.font import Shotai, select_font
-from gsrender.outline import Outline
+from glyphsmith.legacy_kurgm import LegacyKurgmBackend   # import 即注册
+from glyphsmith.legacy_kurgm.expansion import expand
+from glyphsmith.legacy_kurgm.fingerprint import fingerprint
+from glyphsmith.legacy_kurgm.font import Shotai, select_font
+from glyphsmith.outline import Outline
 from tests.golden import build_cases, glyph_cases, load_golden
 
 GOLDEN = load_golden()

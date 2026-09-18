@@ -7,10 +7,10 @@
 """
 import pytest
 
-from gsrender.legacy_kurgm.expansion import TransformOp
-from gsrender.legacy_kurgm.font import Shotai, select_font
-from gsrender.legacy_kurgm.font.transform import df_transform
-from gsrender.outline import Outline
+from glyphsmith.legacy_kurgm.expansion import TransformOp
+from glyphsmith.legacy_kurgm.font import Shotai, select_font
+from glyphsmith.legacy_kurgm.font.transform import df_transform
+from glyphsmith.outline import Outline
 
 # ── FontParams：默认分支（= setSize() 无参 → else 分支，K:324-352）──
 # K:234 kRate=100（类字段初始化，setSize 从不触碰）；其余为 else 分支字面量。
@@ -236,7 +236,7 @@ def test_df_transform_silent_noop_cases():
 # ── drawers 管线（占位）──────────────────────────────────────────
 def test_get_drawers_pipeline_smoke():
     from gsf.kage2 import parse_kage2
-    from gsrender.legacy_kurgm.expansion import expand
+    from glyphsmith.legacy_kurgm.expansion import expand
     f = select_font(Shotai.K_MINCHO)
     g = parse_kage2("1:0:0:20:50:180:50")
     drawers = f.get_drawers(expand(g, {g.name: g}))
@@ -244,7 +244,7 @@ def test_get_drawers_pipeline_smoke():
 
 
 def test_get_drawers_transformop_applies_df_transform():
-    from gsrender.legacy_kurgm.rstroke import RStroke
+    from glyphsmith.legacy_kurgm.rstroke import RStroke
     # T8 起 K_GOTHIC 为真 GothicFont（RStroke 会真画轮廓）；本测试只验证
     # 分发语义，故用 a1=9（dfDrawFont case 9 无操作）的笔画占位
     f = select_font(Shotai.K_GOTHIC)
@@ -277,7 +277,7 @@ def test_push_polygon_nan_dropped_not_raised():
     # → 全量 dump 27 个字形（zackroy-san_* 等）整字形 err，而 kurgm 能渲染。
     # 铁律 1 直译：NaN/±Inf 穿透 floor；NaN 多边形丢弃；Inf 不拦截（源行为，
     # 交由指纹层报 non-finite）。
-    from gsrender.legacy_kurgm.font.gothic_cd import push_polygon
+    from glyphsmith.legacy_kurgm.font.gothic_cd import push_polygon
 
     o = Outline()
     push_polygon(o, [(10, 10, 0), (50, 10, 0), (50, 50, 0)])            # 正常

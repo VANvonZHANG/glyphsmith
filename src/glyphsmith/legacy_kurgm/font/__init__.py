@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/font/__init__.py
+# src/glyphsmith/legacy_kurgm/font/__init__.py
 """字体层：Shotai 选择、FontParams 参数基座、drawers 管线、dfTransform。
 
 ← K/font/index.ts（FontInterface/select）、K/font/shotai.ts（KShotai）、

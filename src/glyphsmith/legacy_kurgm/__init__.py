@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/__init__.py
+# src/glyphsmith/legacy_kurgm/__init__.py
 """legacy-kurgm 后端：kurgm/kage-engine 的忠实 Python 移植。
 
 移植谱系：kurgm/kage-engine（TypeScript，移植基准）← kamichikoichi/kage-engine
@@ -7,8 +7,8 @@
 """
 from __future__ import annotations
 
-from gsrender.outline import Outline
-from gsrender.protocol import Backend, RenderOptions
+from glyphsmith.outline import Outline
+from glyphsmith.protocol import Backend, RenderOptions
 
 
 class LegacyKurgmBackend(Backend):

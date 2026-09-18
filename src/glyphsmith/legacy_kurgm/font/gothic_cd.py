@@ -1,4 +1,4 @@
-# src/gsrender/legacy_kurgm/font/gothic_cd.py
+# src/glyphsmith/legacy_kurgm/font/gothic_cd.py
 """cdDrawU 家族：K/font/gothic/cd.ts（165 行）的逐 case 直译。
 
 一并移植 cd.ts 依赖的三个上游工具（本模块私有；mincho cd 表 T10 需要时再
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 
-from gsrender.outline import Outline
+from glyphsmith.outline import Outline
 
 from ..geom2d import _round
 
