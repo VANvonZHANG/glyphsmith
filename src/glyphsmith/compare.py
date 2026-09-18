@@ -1,5 +1,5 @@
 # src/glyphsmith/compare.py
-"""造字闭环的比对端：栅格 IoU + 逐笔结构度量。"""
+"""The comparison end of the authoring loop: raster IoU + per-stroke structural metrics."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

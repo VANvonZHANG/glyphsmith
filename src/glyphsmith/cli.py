@@ -1,9 +1,11 @@
 # src/glyphsmith/cli.py
-"""glyphsmith —— agent 友好 CLI。统一契约：{"status","data","warnings","hints"}。
+"""glyphsmith — an agent-friendly CLI. Uniform contract:
+{"status","data","warnings","hints"}.
 
-stdout 恒单行 JSON；退出码 0 ok / 2 usage（argparse 自带 + 未知 font/backend
-+ 语料文件缺失）/ 3 unknown glyph（hints 附 `glyphsmith list --like ...` 补救动作）/
-4 cycle（data.error 携带环路径）。
+stdout is always one line of JSON; exit codes are 0 ok / 2 usage (argparse's
+own plus unknown font/backend plus a missing corpus file) / 3 unknown glyph
+(hints carry a `glyphsmith list --like ...` remedy) / 4 cycle (data.error
+carries the cycle path).
 """
 from __future__ import annotations
 
@@ -12,7 +14,8 @@ import json
 import random
 import sys
 
-import glyphsmith.legacy_kurgm  # noqa: F401  注册 legacy-kurgm 后端（不 import 则 get_backend 抛 ValueError，T8 审查发现）
+import glyphsmith.legacy_kurgm  # noqa: F401  register the legacy-kurgm backend
+# (T8 review: without this import, get_backend raises ValueError)
 
 FONT_ALIAS = {"serif": "mincho", "sans": "gothic",
               "mincho": "mincho", "gothic": "gothic"}
@@ -31,10 +34,12 @@ def _fail(code: int, message: str, hints=None) -> None:
 
 
 def _safe_filename(name: str) -> str:
-    """字形名 → 安全文件名：路径分隔符（/、\\ 及 os 层 sep/altsep）换 `_`。
+    """Glyph name → safe filename: path separators (/ and \\ plus the os-level
+    sep/altsep) become `_`.
 
-    T14 审查 M2：GlyphWiki 名含 `/` 时曾直接拼进写盘路径（render --out png
-    raw traceback）。glyphsmith batch（T16）与本处共用同一助手。
+    T14 review M2: a GlyphWiki name containing `/` used to be concatenated
+    straight into the output path (render --out png raw traceback). Both
+    glyphsmith batch (T16) and this spot share the same helper.
     """
     import os
     for sep in {"/", "\\", os.sep, os.altsep}:
@@ -53,8 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     def sp(name, help):
         s = sub.add_parser(name, help=help)
-        # 子命令位也收 --corpus（简报 hints/测试均 `glyphsmith <cmd> --corpus ...` 形态）；
-        # SUPPRESS：子位缺省时不覆写主位已设值，两个位置都可用。
+        # the subcommand position also accepts --corpus (both the brief's hints
+        # and the tests use `glyphsmith <cmd> --corpus ...`);
+        # SUPPRESS: when absent here it does not overwrite a value already set
+        # at the main position, so both positions work.
         s.add_argument("--corpus", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         return s
 
@@ -87,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-# ── 各命令主体：返回 (data, warnings)，错误经异常冒泡由 main 统一接管 ──
+# ── command bodies: return (data, warnings); errors bubble up and main handles them ──
 def _make_renderer(args):
     from glyphsmith import Renderer
     font = FONT_ALIAS.get(args.font)
@@ -95,17 +102,20 @@ def _make_renderer(args):
         _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
     try:
         return Renderer(backend=args.backend, font=font)
-    except ValueError as e:           # get_backend：未注册后端名
+    except ValueError as e:           # get_backend: unregistered backend name
         _fail(2, str(e))
 
 
-BOTH_BACKENDS = ["legacy-kurgm", "pen-minimal"]   # both 固定渲序，svg_legacy/svg_pen 键序同此
+# the fixed render order for `--backend both`; svg_legacy/svg_pen keys follow it
+BOTH_BACKENDS = ["legacy-kurgm", "pen-minimal"]
 
 
 def _render_both(args, r):
-    """`--backend both`（终审 I1）：两后端各渲一次并出对比——CLI 层组合，
-    Renderer/协议层不动。svg 内联双键；png/outline.json 落
-    {name}.legacy.*/{name}.pen.* 两个文件（写盘契约与单后端一致：exit 2 + JSON）。"""
+    """`--backend both` (final review I1): render once per backend and produce a
+    comparison — composed at the CLI layer, leaving Renderer/protocol untouched.
+    For svg both keys are inlined; png/outline.json write two files,
+    {name}.legacy.*/{name}.pen.* (the write contract matches the single-backend
+    case: exit 2 + JSON)."""
     from glyphsmith import Renderer
     from glyphsmith.compare import rasterize
     font = FONT_ALIAS.get(args.font)
@@ -113,7 +123,8 @@ def _render_both(args, r):
         _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
     outs = {key: Renderer(backend=b, font=font).render(r)
             for b, key in zip(BOTH_BACKENDS, ("legacy", "pen"))}
-    # 两后端各自向 r.warnings 回写同源展开警告 → 去重保序合并
+    # each backend writes the same expansion warnings back into r.warnings
+    # → de-duplicate, preserving order
     seen: set[str] = set()
     warns = [w for w in r.warnings if not (w in seen or seen.add(w))]
 
@@ -125,7 +136,7 @@ def _render_both(args, r):
             else:
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump({"contours": out.contours}, f, ensure_ascii=False)
-        except OSError as e:       # 写盘契约（T14 审查 M2）同款
+        except OSError as e:       # same write contract (T14 review M2)
             _fail(2, f"cannot write {path}: {e}")
         return path
 
@@ -145,19 +156,19 @@ def _render_both(args, r):
 def _cmd_render(args, corpus):
     from glyphsmith.compare import rasterize
     r = corpus.resolve(args.name)
-    if args.backend == "both":         # 终审 I1：双后端并渲出对比
+    if args.backend == "both":         # final review I1: render with both and compare
         return _render_both(args, r)
     out = _make_renderer(args).render(r)
-    if args.out == "svg":             # 内联，不落盘
+    if args.out == "svg":             # inline, nothing written to disk
         data = {"name": args.name, "svg": out.to_svg()}
     elif args.out == "png":
         path = f"{_safe_filename(args.name)}.png"
         try:
             rasterize(out).save(path)
-        except OSError as e:           # 写盘契约（T14 审查 M2）：JSON 错误 + exit 2
+        except OSError as e:           # write contract (T14 review M2): JSON error + exit 2
             _fail(2, f"cannot write {path}: {e}")
         data = {"name": args.name, "path": path}
-    else:                             # outline.json：{"contours": [[(x,y,off), ...], ...]}
+    else:                             # outline.json: {"contours": [[(x,y,off), ...], ...]}
         path = f"{_safe_filename(args.name)}.outline.json"
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -165,14 +176,17 @@ def _cmd_render(args, corpus):
         except OSError as e:
             _fail(2, f"cannot write {path}: {e}")
         data = {"name": args.name, "path": path}
-    return data, list(r.warnings)     # render 后端会向 r.warnings 追加展开期警告
+    return data, list(r.warnings)     # the render backend appends expansion warnings here
 
 
 def _closure_depth(corpus, name: str) -> int:
-    """闭包最深 ref 链层数（节点数计，目标自身 = 1）。DFS + memo。
+    """Depth of the deepest ref chain in the closure (counted in nodes; the
+    target itself = 1). DFS + memo.
 
-    与 Corpus._collect 同口径解析引用目标（含 @版本兜底基名）；悬空引用
-    （两边都不在语料）不计层。resolve 已证无环，memo 占位仅作保险。
+    Resolves reference targets by the same rules as Corpus._collect (including
+    the @version fallback to the base name); dangling references (neither side
+    in the corpus) do not count towards the depth. resolve has already proved
+    there is no cycle, so the memo placeholder is only a safety net.
     """
     from glyphsmith.corpus import UnknownGlyphError
     from glyphsmith.legacy_kurgm.expansion import ref_names
@@ -186,8 +200,9 @@ def _closure_depth(corpus, name: str) -> int:
         for ref in ref_names(corpus.glyph_of(n)):
             target = None
             for cand in (ref, ref.partition("@")[0]):
-                # self@N 历史快照自引用不兜底（与 Corpus._collect 同规则，
-                # 否则自引用 X@N 的字形 depth 虚 +1）
+                # a self-referential historical snapshot self@N gets no
+                # fallback (the same rule as Corpus._collect, otherwise a glyph
+                # referencing itself as X@N would have its depth inflated by 1)
                 if cand != ref and cand == n:
                     continue
                 try:
@@ -234,10 +249,10 @@ def _cmd_list(args, corpus):
 
 
 def _cmd_sample(args, corpus):
-    if args.n < 0:                     # T14 审查 M2：负值曾 raw traceback
+    if args.n < 0:                     # T14 review M2: a negative value used to raw traceback
         _fail(2, f"--n must be a non-negative integer, got {args.n}")
     names = list(corpus.iter_names())
-    rng = random.Random(args.seed)     # scripts/sample_dump.py 同款：seed 定 rng
+    rng = random.Random(args.seed)     # as in scripts/sample_dump.py: the seed fixes the rng
     return {"names": rng.sample(names, min(args.n, len(names))),
             "seed": args.seed}, []
 
@@ -249,10 +264,10 @@ def _cmd_compare(args, corpus):
     result = compare(renderer.render(ra), renderer.render(rb))
     sa = renderer.render_separated(ra)
     sb = renderer.render_separated(rb)
-    if len(sa) == len(sb):             # 笔画数不等时逐笔 zip 无意义，留空
+    if len(sa) == len(sb):             # per-stroke zip needs equal counts
         result.per_stroke = compare_separated(sa, sb)
     warns = list(ra.warnings) + [w for w in rb.warnings if w not in ra.warnings]
-    if len(sa) != len(sb):             # T14 审查 M1：静默留空改为显式 warning
+    if len(sa) != len(sb):             # T14 review M1: silent empty list → explicit warning
         warns.append(f"stroke count mismatch: {len(sa)} vs {len(sb)}; "
                      "per_stroke skipped")
     return result.to_dict(), warns
@@ -264,10 +279,12 @@ _HANDLERS = {"render": _cmd_render, "resolve": _cmd_resolve,
 
 
 def _looks_like_dump(path: str) -> bool:
-    """dump_newest_only 格式自动识别：首行含 '|' 且非 GSF 头（gsf/1）。
+    """Auto-detect the dump_newest_only format: the first line contains '|' and
+    is not a GSF header (gsf/1).
 
-    无 --dump 时兜底——agent 直接把 dump 路径丢给 --corpus 时，from_gsf
-    会静默装出空库（无 glyph 行）而非报错。
+    The fallback when --dump is absent — if an agent drops a dump path straight
+    into --corpus, from_gsf would silently load an empty corpus (no glyph line)
+    instead of erroring.
     """
     with open(path, encoding="utf-8") as f:
         first = f.readline()
@@ -275,13 +292,14 @@ def _looks_like_dump(path: str) -> bool:
 
 
 def _cmd_batch(args, _corpus=None):
-    # 语料由 batch_render 自装载（dump 自动识别）：main 的 from_gsf 预载对
-    # batch 既浪费（317MB dump 再读一遍）又常不适用（dump 格式）。
+    # the corpus is loaded by batch_render itself (dump auto-detection): main's
+    # from_gsf preload would both be wasteful for batch (reading the 317MB dump
+    # again) and often inapplicable (dump format).
     from glyphsmith.batch import batch_render
     from glyphsmith.protocol import get_backend
-    if args.workers < 1:                # T14 审查 M2 同款：参数层校验
+    if args.workers < 1:                # as in T14 review M2: argument-level validation
         _fail(2, f"--workers must be >= 1, got {args.workers}")
-    try:                                # 未知 backend → exit 2（模块头契约）
+    try:                                # unknown backend → exit 2 (the module header contract)
         get_backend(args.backend)
     except ValueError as e:
         _fail(2, str(e))
@@ -289,9 +307,9 @@ def _cmd_batch(args, _corpus=None):
         stats = batch_render(args.corpus, args.out, backend=args.backend,
                              workers=args.workers,
                              dump=args.dump or _looks_like_dump(args.corpus))
-    except FileNotFoundError:          # 语料缺失：上抛 main 层（hints 指向语料文件）
+    except FileNotFoundError:          # missing corpus: re-raised to main (hints point at the file)
         raise
-    except OSError as e:                # M2 写盘契约：exit 2 + JSON
+    except OSError as e:                # M2 write contract: exit 2 + JSON
         _fail(2, f"cannot write to {args.out}: {e}")
     return {**stats, "outdir": args.out}, []
 
@@ -302,17 +320,20 @@ def main(argv: list[str] | None = None) -> None:
     from glyphsmith.legacy_kurgm.expansion import CycleError
 
     try:
-        if args.cmd == "batch":        # batch 自带语料装载（见 _cmd_batch）
+        if args.cmd == "batch":        # batch loads its own corpus (see _cmd_batch)
             data, warnings = _cmd_batch(args)
         else:
-            # 终审 C1：非 batch 命令同样自动分流 dump 语料（batch 侧 T16 已做，
-            # 此前 dump 路径被 from_gsf 静默装成空库 → 首例 exit 3 误导）
+            # final review C1: non-batch commands also route dump corpora
+            # automatically (batch did this in T16; previously a dump path was
+            # silently loaded by from_gsf as an empty corpus → a misleading
+            # exit 3 on the first glyph)
             corpus = (Corpus.from_dump(args.corpus)
                       if _looks_like_dump(args.corpus)
                       else Corpus.from_gsf(args.corpus))
             data, warnings = _HANDLERS[args.cmd](args, corpus)
-    except OSError as e:         # 终审 M6：目录/无权限等 OSError 家族（FileNotFoundError
-                                # 仅其一）统一 exit 2 + JSON，不再 raw traceback
+    except OSError as e:         # final review M6: the whole OSError family (directory /
+                                # permissions; FileNotFoundError is only one) now exits 2
+                                # + JSON instead of a raw traceback
         _fail(2, f"cannot open corpus {args.corpus}: {e}",
               hints=[{"action": "glyphsmith list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
                       "reason": "point --corpus at the corpus file"}])
@@ -325,7 +346,7 @@ def main(argv: list[str] | None = None) -> None:
             {"action": f"glyphsmith resolve --corpus {args.corpus} {e.path[0]}",
              "reason": "cycle path is in data.error; fix the cycle in the corpus and retry"}])
     _emit("ok", data, warnings=warnings)
-    sys.exit(0)                        # 成功也走 SystemExit（code=0），契约可预测
+    sys.exit(0)                        # success also goes through SystemExit (code=0)
 
 
 if __name__ == "__main__":

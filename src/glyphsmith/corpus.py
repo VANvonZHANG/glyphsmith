@@ -1,5 +1,6 @@
 # src/glyphsmith/corpus.py
-"""语料装载器：GSF 文件 / dump_newest_only 流式扫描 + 闭包解析。v1 零持久化。"""
+"""Corpus loader: GSF files / streaming scan of dump_newest_only + closure
+resolution. v1 keeps no persistent state."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,22 +19,27 @@ class ResolveResult:
 
 
 class Corpus:
-    """名字 → KAGE 数据串的惰性字典；parse 结果缓存。"""
+    """A lazy dict from name → KAGE data string; parse results are cached."""
 
-    # parse 缓存上限：全量冒烟（222 万字形）会把缓存推到 ~3.5GB/进程
-    # （实测 ~1.6KB/字形）；超限整体清空——行为透明，缓存只影响性能。
+    # Parse cache ceiling: the full-dump smoke (2.22M glyphs) would push the
+    # cache to ~3.5GB per process (measured ~1.6KB/glyph); past the limit it is
+    # cleared wholesale — transparent to behaviour, the cache only affects
+    # performance.
     _CACHE_LIMIT = 200_000
 
     def __init__(self, data: dict[str, str]):
         self._data = data
         self._cache: dict = {}
 
-    # ── 装载 ──
+    # ── loading ──
     @classmethod
     def from_gsf(cls, path) -> "Corpus":
-        # parse_dsl 直接吃含空行/头行/注释/meta 行的全文（校准点 a：整文件一次
-        # 解析，等价于按空行分块逐块解析）；全文有语法坏块时回退分块装载，
-        # 坏块跳过不中断（冒烟口径）。
+        # parse_dsl takes the whole text including blank/header/comment/meta
+        # lines (calibration point a: parsing the whole file at once is
+        # equivalent to parsing it block by block on blank lines); if the whole
+        # text contains a syntactically bad block, fall back to block loading,
+        # where bad blocks are skipped rather than aborting (the smoke
+        # convention).
         text = Path(path).read_text(encoding="utf-8")
         data: dict[str, str] = {}
         try:
@@ -48,26 +54,28 @@ class Corpus:
 
     @classmethod
     def from_dump(cls, path) -> "Corpus":
-        """GlyphWiki dump_newest_only.txt：`name | related | data` 三列，空格
-        padding，strip 即得（真实 dump head -50 抽样核对：首行表头、次行
-        '+/-' 分隔线无 '|'、数据行恒 3 列）。逐行流式读，不整载文本。"""
+        """GlyphWiki dump_newest_only.txt: three columns `name | related | data`,
+        space-padded, so a strip is all it takes (checked against a real dump
+        with head -50: the first line is a header, the second a '+/-' separator
+        with no '|', and data lines always have 3 columns). Read line by line,
+        never loading the whole text."""
         data: dict[str, str] = {}
         with open(path, encoding="utf-8") as f:
             for line in f:
                 cells = line.split("|")
-                if len(cells) < 3:               # 分隔线（'+' 连接）等
+                if len(cells) < 3:               # separator lines (joined by '+') etc.
                     continue
                 name = cells[0].strip()
-                if not name or name == "name":   # 空名 / 表头行
+                if not name or name == "name":   # empty name / header row
                     continue
                 data[name] = cells[2].strip()
         return cls(data)
 
-    # ── 解析 ──
+    # ── parsing ──
     def glyph_of(self, name: str):
         if name not in self._cache:
             if len(self._cache) >= self._CACHE_LIMIT:
-                self._cache.clear()    # 粗粒度封顶：整清后重建，行为不变
+                self._cache.clear()    # coarse ceiling: clear and rebuild; behaviour unchanged
             if name not in self._data:
                 raise UnknownGlyphError(name)
             from gsf.kage2 import parse_kage2
@@ -75,11 +83,15 @@ class Corpus:
         return self._cache[name]
 
     def resolve(self, name: str) -> ResolveResult:
-        """ref 闭包解析：返回 {名字 → Glyph} 部件集与装载/兜底警告。
+        """ref closure resolution: returns the {name → Glyph} part set plus
+        loading/fallback warnings.
 
-        DFS 带灰集（当前递归路径）：回边（target 已在路径上）才是环；已完成的
-        共享部件（在 parts、不在路径上）直接跳过——菱形依赖不误报（简报参考
-        实现把"重访"当环，对共用部件的 DAG 会假阳性 CycleError，已修正）。"""
+        DFS with a grey set (the current recursion path): only a back edge
+        (target already on the path) is a cycle; finished shared parts (present
+        in parts, not on the path) are skipped outright — diamond dependencies
+        are not misreported (the brief's reference implementation treated a
+        revisit as a cycle and raised spurious CycleErrors on DAGs with shared
+        parts; fixed)."""
         if name not in self._data:
             raise UnknownGlyphError(name)
         warnings: list[str] = []
@@ -99,22 +111,24 @@ class Corpus:
             if ref in self._data:
                 target = ref
             elif base in self._data and base != name:
-                # @版本兜底。base != name：self@N 历史快照自引用不兜底
-                # （newest-only 语料没有 X@N 行，回退到自身是假环——
-                # T16 全量冒烟 94 例；kurgm 精确匹配查不到即跳过）
+                # @version fallback. base != name: a self-referential
+                # historical snapshot self@N gets no fallback (a newest-only
+                # corpus has no X@N row, so falling back to itself would be a
+                # false cycle — 94 cases in the T16 full-dump smoke; kurgm's
+                # exact match finds nothing and skips it)
                 target = base
                 warnings.append(f"version ref fallback: {ref} -> {base}")
             else:
                 warnings.append(f"dangling ref: {ref} (referenced by {name})")
                 continue
-            if target in on_path:               # 回边 → 环
+            if target in on_path:               # back edge → cycle
                 raise CycleError(path[path.index(target):])
             if target not in parts:
                 self._collect(target, parts, path, on_path, warnings)
         path.pop()
         on_path.remove(name)
 
-    # ── 检索 ──
+    # ── search ──
     def iter_names(self) -> Iterator[str]:
         return iter(self._data)
 
@@ -124,7 +138,7 @@ class Corpus:
             if like and not n.startswith(like.rstrip("*")):
                 continue
             if src or char:
-                p = parse_name(n)      # gsf.names.parse_name 返回 dict（非对象）
+                p = parse_name(n)      # gsf.names.parse_name returns a dict (not an object)
                 if src and p["src"] != src:
                     continue
                 if char and char_of(p) != char:
@@ -138,7 +152,8 @@ def _parse_gsf_text(text: str):
 
 
 def _load_blocks(text: str, data: dict[str, str]) -> None:
-    """按空行分块装载（全文解析失败时的回退）：语法坏块跳过，不中断。"""
+    """Load block by block on blank lines (the fallback when whole-text parsing
+    fails): syntactically bad blocks are skipped, not fatal."""
     block: list[str] = []
     for line in text.splitlines():
         if line.strip() == "":
@@ -152,7 +167,8 @@ def _load_blocks(text: str, data: dict[str, str]) -> None:
 def _flush(block: list[str], data: dict[str, str]) -> None:
     if not block:
         return
-    # 剥头行/注释/meta 行；块内须含 glyph 行才尝试解析（纯头部块直接跳过）。
+    # strip header/comment/meta lines; a block must contain a glyph line before
+    # we try to parse it (header-only blocks are skipped outright).
     body = [l for l in block
             if not (l == "gsf/1" or l.lstrip().startswith(("#", "meta ")))]
     if not any(l.startswith("glyph ") for l in body):
@@ -160,7 +176,7 @@ def _flush(block: list[str], data: dict[str, str]) -> None:
     try:
         glyphs = _parse_gsf_text("\n".join(body))
     except SyntaxError:
-        return  # 坏块跳过
+        return  # skip the bad block
     from gsf.writer import to_kage2
     for g in glyphs:
         data[g.name] = to_kage2(g)

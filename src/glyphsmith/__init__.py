@@ -1,9 +1,10 @@
 # src/glyphsmith/__init__.py
-"""glyphsmith：GSF 字形渲染器。"""
-import glyphsmith.legacy_kurgm  # noqa: F401  注册 legacy-kurgm（默认后端）——终审 C2：
-                               # 此前仅由 cli.py 显式 import 注册，库态冷导入
-                               # `import glyphsmith; Renderer()` 会抛 ValueError
-import glyphsmith.pen_minimal  # noqa: F401  注册 pen-minimal 后端（T8 审查教训：不 import 则 get_backend 抛 ValueError）
+"""glyphsmith: a GSF glyph renderer."""
+import glyphsmith.legacy_kurgm  # noqa: F401  register legacy-kurgm (the default backend)
+# Final review C2: previously only cli.py's explicit import registered it, so a
+# cold library import `import glyphsmith; Renderer()` raised ValueError.
+import glyphsmith.pen_minimal  # noqa: F401  register the pen-minimal backend
+# T8 review lesson: without this import, get_backend raises ValueError.
 from glyphsmith.compare import compare
 from glyphsmith.corpus import Corpus
 from glyphsmith.protocol import RenderOptions, Renderer

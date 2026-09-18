@@ -1,6 +1,6 @@
 # src/glyphsmith/outline.py
-"""共享轮廓结构：legacy 与 pen 两后端的统一输出。"""
-Pt = tuple[float, float, int]      # (x, y, off)：off=1 为 off-curve（TrueType 惯例）
+"""The shared outline structure: the common output of both the legacy and pen backends."""
+Pt = tuple[float, float, int]      # (x, y, off): off=1 means off-curve (TrueType convention)
 Contour = list[Pt]
 
 
@@ -9,15 +9,18 @@ def _fmt(v: float) -> str:
 
 
 def _start_oncurve(contour: Contour) -> Contour:
-    """TrueType 惯例的环绕规范化：让轮廓以 on-curve 点起步。
+    """Wrap-around normalisation per the TrueType convention: make the contour
+    start on an on-curve point.
 
-    - 首点 on：原样返回；
-    - 首点 off、末点 on：轮转（末点当锚，环序不变）；
-    - 首末皆 off：在首末之间合成隐含中点作锚（TrueType 中连续 off 点
-      间的隐含 on 点）。返回新列表，不改调用方的 contour。
+    - first point on: returned as-is;
+    - first off, last on: rotate (the last point becomes the anchor, cycle order
+      unchanged);
+    - both off: synthesise the implied midpoint between first and last as the
+      anchor (in TrueType, the implied on point between consecutive off points).
+      Returns a new list and does not modify the caller's contour.
     """
-    if contour[0][2]:                   # 首点 off
-        if contour[-1][2]:              # 末点也 off → 合成隐含中点作锚
+    if contour[0][2]:                   # first point is off
+        if contour[-1][2]:              # last point off too → synthesise implied midpoint
             mx = (contour[0][0] + contour[-1][0]) / 2
             my = (contour[0][1] + contour[-1][1]) / 2
             return [(mx, my, 0)] + list(contour)
@@ -26,7 +29,7 @@ def _start_oncurve(contour: Contour) -> Contour:
 
 
 class Outline:
-    """可变构建器 + 序列化。坐标系默认 200×200、y 向下（legacy 兼容）。"""
+    """Mutable builder + serialisation. Defaults to 200×200, y down (legacy-compatible)."""
 
     def __init__(self) -> None:
         self.contours: list[Contour] = []
@@ -45,7 +48,7 @@ class Outline:
             self.new_contour()
         self.contours[-1].append((float(x), float(y), int(off)))
 
-    # ── 序列化 ─────────────────────────────────────────────
+    # ── serialisation ──────────────────────────────────────
     def to_path_d(self) -> str:
         parts: list[str] = []
         for contour in self.contours:
@@ -61,8 +64,9 @@ class Outline:
                     segs.append(f"L {_fmt(x)},{_fmt(y)}")
                     i += 1
                     continue
-                # off-curve：找下一个点（末点 off 时环绕回锚点 seq[0]）；
-                # 若同为 off 则隐含中点
+                # off-curve: look at the next point (wrapping back to the
+                # anchor seq[0] when the last point is off); if it is off too,
+                # the implied midpoint
                 nx, ny, noff = seq[i + 1] if i + 1 < len(seq) else seq[0]
                 if noff:
                     mx, my = (x + nx) / 2, (y + ny) / 2
