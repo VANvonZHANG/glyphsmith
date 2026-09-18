@@ -232,8 +232,7 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   no boolean union, transforms skipped. It exists to prove the `Backend` protocol is not
   legacy-shaped, and it is a fast preview tool. The design for the real pen backend
   (relational graph + style files + variable-width nib) is in
-  [`docs/pen-backend-design.md`](docs/pen-backend-design.md) — written in Chinese; the module names,
-  YAML and tables are language-independent.
+  [`docs/pen-backend-design.md`](docs/pen-backend-design.md).
 - **`batch` does not resolve references.** Like the smoke harness it renders each glyph with its own
   parts only (a throughput decision at dump scale), so reference-only glyphs come out as empty SVGs.
   Use `render` when you need closure-resolved output. `empty` is reported in the batch stats.
