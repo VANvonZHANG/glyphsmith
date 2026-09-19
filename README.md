@@ -13,7 +13,7 @@ Three backends share one outline structure and one CLI:
 | Backend | What it is |
 |---|---|
 | `legacy-kurgm` | A line-by-line Python port of the [kage-engine](https://github.com/kurgm/kage-engine) TypeScript renderer. Point-for-point identical to the reference implementation (see [validation](#validation)) — the regression baseline. |
-| `pen` | The v2 style engine: a relational graph over the strokes plus declarative style files (`--style serif-song\|sans-hei\|sans-round\|<path>`). Variable-width nib; endpoints come from the data, ornaments from the style. |
+| `pen` | The v2 style engine: a relational graph over the strokes plus declarative style files (`--style serif-song\|sans-hei\|sans-round\|<path>`). Variable-width nib; endpoints come from the data, ornaments from the style. User guide: [`docs/pen-backend.md`](docs/pen-backend.md). |
 | `pen-minimal` | A uniform-width stroke preview (butt caps, per-segment quads; Levien's *weak correctness* level). Preview-grade; it is the v1 interface placeholder, kept as the equivalence anchor. |
 
 `--backend both` renders `legacy-kurgm` and `pen` side by side — the useful contrast is now
@@ -265,6 +265,14 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   that version is absent from a newest-only dump, glyphsmith falls back to rendering newest `X` and
   emits a `version ref fallback` warning; kage-engine looks the part up exactly and silently draws
   nothing. This is a long-standing, disclosed difference in the corpus layer, not in the renderer.
+- **The pen backend is not part of the golden differential baseline.** It shares the skeleton with
+  `legacy-kurgm` (expansion, stroke order) but deliberately not the geometry — decorations are
+  calibrated rather than ported, curves follow the true curve instead of the control polygon, the two
+  rules are declarative rewrites rather than ports, and `meets_tol = 1.0` replaces exact coordinate
+  equality. The IoU between the two engines is therefore a **reference number, not a pass/fail
+  gate**: 0.7409 at n = 200 (0.7412 at n = 2000) from `scripts/pen_style_diff.py --closure` — the
+  flag matters, because the stroke-only default compares mostly blank masks. Full list and the
+  five-layer validation story: [`docs/pen-backend.md`](docs/pen-backend.md).
 
 ## License and provenance
 

@@ -1,0 +1,13 @@
+# pen backend self-golden (spec §6 layer 5).
+# ⚠ Drift guard only: these values come from glyphsmith's own code, so they
+# can show that the output changed, never that it is right.
+# Regenerate: python scripts/pen_golden_regen.py
+serif-song:0	3 11 fc956701673ea464a9902a3eebd9aca293d70026
+serif-song:1	5 46 fdd4d4e12fe2f329e212e8e553306be5eff4d3a9
+serif-song:2	1 10 832abdc9edc22e8694bd701b07f21551b2e420f9
+sans-hei:0	2 8 9fc2f325a5cef470dde4105f828030863ac9b440
+sans-hei:1	4 29 da66567f12021edce613304804f63171380cdd8a
+sans-hei:2	1 6 f7968c254bd141320a0c98500ee6ec29c02919c5
+sans-round:0	2 24 46349e8fa0dac8feb4fea57269f6c6d766c5633b
+sans-round:1	4 64 d8beaf05c7335e05cb9269c4627989a04b405670
+sans-round:2	1 18 5bfc2c76a6c023e30f153da21ec82ebfb6940306

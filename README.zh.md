@@ -13,7 +13,7 @@
 | 后端 | 定位 |
 |---|---|
 | `legacy-kurgm` | [kage-engine](https://github.com/kurgm/kage-engine)（TypeScript）的逐行 Python 移植，与参考实现**逐点全等**（见[验证](#验证)）——回归基线 |
-| `pen` | v2 风格引擎：笔画关系图 + 声明式风格文件（`--style serif-song\|sans-hei\|sans-round\|<路径>`）。变宽笔尖；端部形状来自数据，加饰来自风格 |
+| `pen` | v2 风格引擎：笔画关系图 + 声明式风格文件（`--style serif-song\|sans-hei\|sans-round\|<路径>`）。变宽笔尖；端部形状来自数据，加饰来自风格。用法文档：[`docs/pen-backend.md`](docs/pen-backend.md) |
 | `pen-minimal` | 等宽描边骨架预览（butt 端帽、逐段四边形；Levien「弱正确」级）。预览级，是 v1 接口占位，保留作等价性锚点 |
 
 `--backend both` 把 `legacy-kurgm` 与 `pen` 各渲一次并排返回——有意义的对照现在是
@@ -245,6 +245,12 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
 - **版本兜底语义与 kage-engine 不同，且是有意为之。** 引用了 `X@N` 但该版本行不在
   newest dump 时，glyphsmith 回退渲染 newest `X` 并发 `version ref fallback` 警告；
   kage-engine 精确匹配、查不到即静默不画。这是语料层的长期差异（已披露），不在渲染器内。
+- **pen 后端不在 golden 差分基线内。** 它与 `legacy-kurgm` 共享骨架（展开、笔画顺序），
+  但有意不共享几何——加饰是标定而非移植、曲线走真曲线而非控制多边形、两条规则是声明式
+  改写而非移植、`meets_tol = 1.0` 取代精确坐标相等。因此两者之间的 IoU 只是**参照数值，
+  不是通过/失败的门槛**：`scripts/pen_style_diff.py --closure` 在 n = 200 时为 0.7409
+  （n = 2000 时 0.7412）——`--closure` 不能省，stroke-only 默认口径比的多是空白掩码。
+  完整差异清单与五层验证见 [`docs/pen-backend.md`](docs/pen-backend.md)。
 
 ## 许可证与谱系
 
