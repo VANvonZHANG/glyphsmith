@@ -48,6 +48,38 @@ def arc_length(pts) -> float:
                for i in range(len(pts) - 1))
 
 
+# Half-open [lo, hi) sectors over phi = atan2(dy, dx) in degrees, y-down.
+# Exhaustive and non-overlapping (spec §4.2.1): [-180,-170) and [170,180] are
+# handled separately below because atan2 returns a closed 180.
+SECTORS = ((-10.0, 10.0, "horizontal"), (10.0, 70.0, "right-falling"),
+           (70.0, 110.0, "vertical"), (110.0, 170.0, "left-falling"),
+           (-170.0, -110.0, "left-falling"), (-110.0, -70.0, "vertical"),
+           (-70.0, -10.0, "rising"))
+
+
+def classify_orientation(pts) -> str:
+    """The stroke's width-profile band, from its start->end chord (spec §4.2.1).
+
+    The chord (not the arc) is what the design fixes: calligraphic direction is
+    about where the stroke goes, and a bent stroke like 竖弯钩 still reads as a
+    vertical. Degenerate centerlines fall back to "horizontal" — the nib layer
+    drops zero-length strokes anyway, so the value only has to be total.
+    """
+    if len(pts) < 2:
+        return "horizontal"
+    dx = pts[-1][0] - pts[0][0]
+    dy = pts[-1][1] - pts[0][1]
+    if dx == 0.0 and dy == 0.0:
+        return "horizontal"
+    phi = math.degrees(math.atan2(dy, dx))
+    if phi < -170.0 or phi >= 170.0:
+        return "horizontal"
+    for lo, hi, name in SECTORS:
+        if lo <= phi < hi:
+            return name
+    return "horizontal"
+
+
 def _mid(a, b):
     return ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
 

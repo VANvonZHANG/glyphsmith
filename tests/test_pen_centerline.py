@@ -74,3 +74,45 @@ def test_collinear_curve_collapses_to_one_segment():
 
 def test_flatten_tol_is_the_documented_value():
     assert FLATTEN_TOL == 0.25
+
+
+from glyphsmith.pen.centerline import classify_orientation
+
+
+def _at(deg, r=100.0):
+    """A two-point centerline whose start->end direction is exactly `deg`
+    degrees (y-down screen coordinates, the KAGE convention)."""
+    return [(0.0, 0.0), (r * math.cos(math.radians(deg)), r * math.sin(math.radians(deg)))]
+
+
+@pytest.mark.parametrize("deg,expected", [
+    (0.0, "horizontal"), (-9.999, "horizontal"), (9.999, "horizontal"),
+    (170.001, "horizontal"), (-170.001, "horizontal"), (179.999, "horizontal"),
+    (-179.999, "horizontal"),
+    (10.001, "right-falling"), (52.9, "right-falling"), (69.999, "right-falling"),
+    (70.001, "vertical"), (90.0, "vertical"), (109.999, "vertical"),
+    (110.001, "left-falling"), (132.7, "left-falling"), (169.999, "left-falling"),
+    (-169.999, "left-falling"), (-110.001, "left-falling"),
+    (-109.999, "vertical"), (-90.0, "vertical"), (-70.001, "vertical"),
+    (-69.999, "rising"), (-19.8, "rising"), (-10.001, "rising"),
+    (-10.0, "horizontal"),
+])
+def test_orientation_sectors(deg, expected):
+    assert classify_orientation(_at(deg)) == expected
+
+
+def test_real_glyph_directions():
+    # 十 u5341-j stroke 2: 1:0:0:100:17:100:185 (vertical)
+    assert classify_orientation(extract(_rs(1, 0, 0, 100, 17, 100, 185, 0, 0, 0, 0))) == "vertical"
+    # 十 u5341-j stroke 1: 1:0:0:14:92:186:92 (horizontal)
+    assert classify_orientation(extract(_rs(1, 0, 0, 14, 92, 186, 92, 0, 0, 0, 0))) == "horizontal"
+    # 寸 u5bf8-j stroke 3: 2:7:8:53:88:77:105:84:129 (dot, down-right)
+    assert classify_orientation(extract(_rs(2, 7, 8, 53, 88, 77, 105, 84, 129, 0, 0))) == "right-falling"
+    # 扌 u624c-01 stroke 3: 2:0:7:18:122:63:107:104:91 (提, up-right at -19.8 deg)
+    assert classify_orientation(extract(_rs(2, 0, 7, 18, 122, 63, 107, 104, 91, 0, 0))) == "rising"
+
+
+def test_degenerate_centerlines_default_to_horizontal():
+    assert classify_orientation([]) == "horizontal"
+    assert classify_orientation([(5.0, 5.0)]) == "horizontal"
+    assert classify_orientation([(5.0, 5.0), (5.0, 5.0)]) == "horizontal"
