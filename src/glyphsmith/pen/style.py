@@ -10,16 +10,22 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from glyphsmith.pen.centerline import BANDS
+from glyphsmith.pen.centerline import BANDS, vertex_ts
+from glyphsmith.pen.nib import StrokePlan
 
 HEAD_WORDS = ("flat", "join-h", "tip", "corner-ul", "corner-ur", "join-v")
 TAIL_WORDS = ("flat", "join-h", "hook", "tip", "heel-ll", "heel-lr", "cap-t",
               "join-v", "heel-ll-old", "heel-ll-new")
 ENDING_WORDS = tuple(sorted(set(HEAD_WORDS) | set(TAIL_WORDS)))       # 12
+# The head words that rewrite the bend join (spec §4.2.2): the corner of a bent
+# stroke takes its join from the *ending* that names that corner, not from
+# joins.bend (which is only the default for an unnamed corner).
+BEND_WORDS = ("corner-ul", "corner-ur")
 CAP_WORDS = ("butt", "square", "round")
 JOIN_WORDS = ("miter", "bevel", "round")
 DECORATION_WORDS = ("wedge", "hook", "heel")
@@ -113,6 +119,32 @@ def _positive(v, where: str) -> float:
 def _nonneg(v, where: str) -> float:
     f = _positive(v, where) if v else 0.0
     return f
+
+
+@dataclass(frozen=True)
+class Decoration:
+    """One ornament placed in a stroke end's local frame (spec §4.3.5). All
+    numeric parameters are multiples of the local full width."""
+    kind: str
+    at: str                                             # head | tail
+    length: float = 0.0
+    size: float = 0.0
+    width: float = 0.0
+    join: str = "bevel"
+
+
+def profile_at(profile, t: float) -> float:
+    """Piecewise-linear width profile, clamped outside [0, 1] (spec §4.2.2)."""
+    if t <= profile[0][0]:
+        return profile[0][1]
+    if t >= profile[-1][0]:
+        return profile[-1][1]
+    for i in range(len(profile) - 1):
+        t0, w0 = profile[i]
+        t1, w1 = profile[i + 1]
+        if t0 <= t <= t1:
+            return w1 if t1 == t0 else w0 + (w1 - w0) * (t - t0) / (t1 - t0)
+    return profile[-1][1]
 
 
 class Style:
@@ -329,6 +361,91 @@ class Style:
         if word not in DECORATION_WORDS:
             raise StyleError(f"{where}: unknown decoration {word!r} "
                              f"(allowed: {', '.join(DECORATION_WORDS)})")
+
+    # ── planning ───────────────────────────────────────────────────────────
+    # The validated parameters meet the geometry (spec §4.2.2's end x profile
+    # table). Units: every number under `endings`/`decorations` is a multiple of
+    # the local *full* width (dimensionless), which is what lets one recipe fit
+    # the serif, sans and round styles alike. `miter_limit` is the exception: a
+    # ratio to the half-width, as in CSS.
+    def cap_for(self, band: str) -> str:
+        return self.caps.get(band, self.caps.get("default", "butt"))
+
+    def join_for(self, band: str) -> str:
+        return self.joins.get(band, self.joins.get("default", "miter"))
+
+    def _ending(self, node, end: str) -> str | None:
+        """The data's ending word for one end, or None when it is ignored."""
+        if self.endings_source == "style" or node.pure_geometry:
+            return None
+        return node.head if end == "head" else node.tail
+
+    def _bands_decorations(self, node, end: str) -> list:
+        """Ornaments the style adds where the data left the end `flat`
+        (spec §4.2.2 'decorations apply where the ending is flat')."""
+        if node.pure_geometry or self._ending(node, end) != "flat":
+            return []
+        out = []
+        for kind, spec in self.decorations.items():
+            if spec.get("on") != node.orientation or spec.get("at") != end:
+                continue
+            out.append(Decoration(kind=kind, at=end,
+                                  length=float(spec.get("length", 0.0)),
+                                  size=float(spec.get("size", 0.0)),
+                                  width=float(spec.get("width", 0.0)),
+                                  join=str(spec.get("join", "bevel"))))
+        return out
+
+    def _end_width(self, node, end: str, w: float) -> float:
+        """Apply the ending's width modulation. `tip.min_width` is a multiple of
+        the local full width (spec §4.3.5), so it scales with the band."""
+        word = self._ending(node, end)
+        spec = self.endings.get(word or "", {})
+        if "min_width" in spec:                 # `tip`: taper the end
+            return w * min(1.0, float(spec["min_width"]))
+        return w
+
+    def plan_for(self, node) -> StrokePlan:
+        prof = self.width_profile[node.orientation]
+        ts = vertex_ts(list(node.centerline))
+        widths = [profile_at(prof, t) for t in ts]
+        widths[0] = self._end_width(node, "head", widths[0])
+        widths[-1] = self._end_width(node, "tail", widths[-1])
+
+        cap_head, cap_tail = self.cap_for(node.orientation), self.cap_for(node.orientation)
+        if self._ending(node, "head") in ("join-h", "join-v"):
+            cap_head = "butt"
+        if self._ending(node, "tail") in ("join-h", "join-v"):
+            cap_tail = "butt"
+
+        bend = self.join_for("bend")
+        for word in BEND_WORDS:
+            spec = self.endings.get(word, {})
+            for end in ("head", "tail"):
+                if self._ending(node, end) == word and "join" in spec:
+                    bend = spec["join"]
+        joins = [bend] * max(0, len(node.centerline) - 2)
+
+        decos = []
+        for end in ("head", "tail"):
+            decos += self._bands_decorations(node, end)
+            word = self._ending(node, end)
+            spec = self.endings.get(word or "", {})
+            if word in ("hook",) or (word or "").startswith("heel"):
+                decos.append(Decoration(kind=word, at=end,
+                                        length=float(spec.get("length", 0.0)),
+                                        size=float(spec.get("size", 0.0)),
+                                        width=float(spec.get("width", 0.0)),
+                                        join=str(spec.get("join", "bevel"))))
+        return StrokePlan(centerline=[tuple(p) for p in node.centerline],
+                          widths=widths, cap_head=cap_head, cap_tail=cap_tail,
+                          joins=joins,
+                          miter_limit=float(self.endings.get("corner-ul", {})
+                                            .get("miter_limit", 3.0)),
+                          decorations=decos)
+
+    def apply(self, graph) -> dict:
+        return {n.id: self.plan_for(n) for n in graph.nodes}
 
 
 _DECORATION_WORDS_SET = set(DECORATION_WORDS)

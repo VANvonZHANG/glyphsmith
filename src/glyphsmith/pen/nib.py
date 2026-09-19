@@ -18,8 +18,8 @@ ARC_TOL = 0.25          # arc flattening tolerance, KAGE units
 
 
 @dataclass
-class PenPlan:
-    """The minimum nib needs (T10 replaces this with style.StrokePlan)."""
+class StrokePlan:
+    """What the nib needs for one stroke (spec §3.3). Built by style.apply."""
     centerline: list[tuple[float, float]]
     widths: list[float]                      # full width per vertex
     cap_head: str = "butt"
@@ -28,9 +28,23 @@ class PenPlan:
     # applies to centerline vertex i + 1.
     joins: list[str] = field(default_factory=list)
     miter_limit: float = 3.0
+    # Ornaments stacked on top of the body ([style.Decoration], spec §4.3.5).
+    # The nib itself never reads them: the decoration geometry is T11's job.
+    decorations: list = field(default_factory=list)
     # Why this stroke could not be stroked normally (spec §4.3.4); should_degrade
     # records its reasons here instead of dropping geometry silently.
     warnings: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # One full width per centerline vertex is the nib's indexing contract.
+        # Too few entries surface as an opaque IndexError deep inside the
+        # geometry; too many are silently ignored, so the stroke quietly draws
+        # with the wrong width at its tail. Name both lengths instead.
+        if len(self.widths) != len(self.centerline):
+            raise ValueError(
+                f"widths has {len(self.widths)} entries but centerline has "
+                f"{len(self.centerline)} vertices: one full width per vertex "
+                f"is required")
 
 
 def shoelace(pts) -> float:
@@ -180,7 +194,7 @@ def _cap_points(p_end, out_dir, half, style, start, stop):
     return _arc_points(p_end, half, start, stop, through)
 
 
-def body_contour(plan: PenPlan) -> list[tuple[float, float]]:
+def body_contour(plan: StrokePlan) -> list[tuple[float, float]]:
     """The stroke body as one closed CCW contour (spec §4.3.2)."""
     pts = plan.centerline
     half = [w / 2.0 for w in plan.widths]
@@ -221,7 +235,7 @@ def curvature_radius(pts):
     return out
 
 
-def _degeneracy_reasons(plan: PenPlan) -> list[str]:
+def _degeneracy_reasons(plan: StrokePlan) -> list[str]:
     """Every reason this stroke cannot be stroked normally (spec §4.3.4)."""
     pts = plan.centerline
     reasons = []
@@ -247,7 +261,7 @@ def _degeneracy_reasons(plan: PenPlan) -> list[str]:
     return reasons
 
 
-def should_degrade(plan: PenPlan) -> bool:
+def should_degrade(plan: StrokePlan) -> bool:
     """True when the stroke cannot be stroked as a single contour; records why
     in plan.warnings (never raises — warnings are the contract)."""
     reasons = _degeneracy_reasons(plan)
@@ -257,7 +271,7 @@ def should_degrade(plan: PenPlan) -> bool:
     return bool(reasons)
 
 
-def quad_fallback(plan: PenPlan) -> list[list[tuple[float, float]]]:
+def quad_fallback(plan: StrokePlan) -> list[list[tuple[float, float]]]:
     """Per-segment quads (pen-minimal's shape) for a stroke that must degrade.
 
     Returns [] for a zero-length or non-finite stroke: there is nothing to draw,

@@ -161,3 +161,111 @@ def test_round_differs_from_hei_only_in_caps_and_joins():
     assert hei.width_profile == rnd.width_profile
     assert hei.endings == rnd.endings
     assert rnd.caps["default"] == "round" and rnd.joins["default"] == "round"
+
+
+from glyphsmith.pen.nib import StrokePlan
+from glyphsmith.pen.style import Decoration, profile_at
+
+
+def test_profile_at_interpolates_and_clamps():
+    prof = [(0.0, 4.0), (0.5, 10.0), (1.0, 2.0)]
+    assert profile_at(prof, 0.0) == pytest.approx(4.0)
+    assert profile_at(prof, 0.25) == pytest.approx(7.0)
+    assert profile_at(prof, 0.5) == pytest.approx(10.0)
+    assert profile_at(prof, 0.75) == pytest.approx(6.0)
+    assert profile_at(prof, 1.0) == pytest.approx(2.0)
+    assert profile_at(prof, -1.0) == pytest.approx(4.0)
+    assert profile_at(prof, 9.0) == pytest.approx(2.0)
+
+
+def node(**kw):
+    from glyphsmith.pen.graph import Node
+    base = dict(id=0, a1_100=1, a1_opt=0, a3_opt=0, type="line", orientation="horizontal",
+                head="flat", tail="flat", length=160.0, bbox=(20.0, 50.0, 180.0, 50.0),
+                centerline=((20.0, 50.0), (180.0, 50.0)),
+                pure_geometry=False)
+    base.update(kw)
+    return Node(**base)
+
+
+def test_plan_uses_the_band_profile():
+    s = Style.load("serif-song")
+    p = s.plan_for(node(orientation="horizontal"))
+    assert p.widths == [pytest.approx(4.0), pytest.approx(4.5)]
+    v = s.plan_for(node(orientation="vertical"))
+    assert v.widths == [pytest.approx(12.0), pytest.approx(11.0)]
+
+
+def test_tip_clamps_the_end_width():
+    s = Style.load("serif-song")
+    p = s.plan_for(node(orientation="vertical", tail="tip"))   # min_width = 0.15
+    # min_width is a multiple of *that end's* width (spec §4.2.2: the end's width
+    # becomes min(profile end, min_width x profile end)), and the vertical band
+    # ends at 11.0, not at the 12.0 it starts from — so the clamp is 11 * 0.15.
+    # The pre-implementation brief had 12.0 * 0.15 here, which contradicts its own
+    # band-profile test two tests above.
+    assert p.widths[-1] == pytest.approx(11.0 * 0.15)
+    assert p.widths[0] == pytest.approx(12.0), "only the tip end is affected"
+
+
+def test_pure_geometry_ignores_endings_and_decorations():
+    s = Style.load("serif-song")
+    plain = s.plan_for(node(tail="hook", pure_geometry=True, a1_opt=1))
+    assert plain.decorations == []
+    assert plain.widths == [pytest.approx(4.0), pytest.approx(4.5)]
+    assert plain.cap_tail == "butt"
+
+
+def test_join_ends_force_butt_caps():
+    s = Style.load("serif-song")
+    p = s.plan_for(node(head="join-h", tail="join-v"))
+    assert p.cap_head == "butt" and p.cap_tail == "butt"
+    assert p.decorations == [], "a junction end never carries a decoration"
+
+
+def test_wedge_is_added_only_where_the_tail_is_flat():
+    s = Style.load("serif-song")
+    yes = s.plan_for(node(tail="flat"))
+    assert [(d.kind, d.at) for d in yes.decorations] == [("wedge", "tail")]
+    no = s.plan_for(node(tail="tip"))
+    assert no.decorations == []
+
+
+def test_wedge_is_band_filtered():
+    s = Style.load("serif-song")
+    assert s.plan_for(node(orientation="vertical")).decorations == []
+
+
+def test_endings_source_style_ignores_the_data_words():
+    text = _GOOD_WITH_STYLE_SOURCE = GOOD.replace("endings_source: data",
+                                                  "endings_source: style")
+    import tempfile, pathlib
+    with tempfile.TemporaryDirectory() as d:
+        p = pathlib.Path(d) / "s.yaml"
+        p.write_text(text, encoding="utf-8")
+        s = Style.load(p)
+    hooked = s.plan_for(node(tail="hook"))
+    assert hooked.decorations == [], "decorations still come from `decorations`"
+    assert s.plan_for(node(tail="tip")).widths[-1] == pytest.approx(4.5), \
+        "the tip clamp must not apply when the data endings are ignored"
+
+
+def test_corner_ending_overrides_the_bend_join():
+    s = Style.load("serif-song")                 # joins: {default: miter, bend: round}
+    bent = node(type="bend", centerline=((0.0, 0.0), (100.0, 0.0), (100.0, 100.0)))
+    assert s.plan_for(bent).joins == ["round"]
+    bent_corner = node(type="bend", head="corner-ul",
+                       centerline=((0.0, 0.0), (100.0, 0.0), (100.0, 100.0)))
+    assert s.plan_for(bent_corner).joins == ["miter"]
+
+
+def test_apply_returns_one_plan_per_node():
+    from glyphsmith.pen.graph import build
+    from glyphsmith.legacy_kurgm.rstroke import RStroke
+    s = Style.load("serif-song")
+    g = build([RStroke(1, 0, 0, 14, 92, 186, 92, 0, 0, 0, 0),
+               RStroke(1, 0, 4, 100, 17, 100, 185, 0, 0, 0, 0)])
+    plans = s.apply(g)
+    assert set(plans) == {0, 1}
+    assert all(isinstance(p, StrokePlan) for p in plans.values())
+    assert [d.kind for d in plans[1].decorations] == ["hook"]

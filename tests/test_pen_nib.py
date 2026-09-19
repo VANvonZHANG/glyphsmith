@@ -3,12 +3,12 @@ import math
 
 import pytest
 
-from glyphsmith.pen.nib import ARC_TOL, PenPlan, _arc_points, body_contour, shoelace
+from glyphsmith.pen.nib import ARC_TOL, StrokePlan, _arc_points, body_contour, shoelace
 
 
 def plan(pts, width=10.0, **kw):
     n = len(pts)
-    return PenPlan(centerline=list(pts), widths=[width] * n, **kw)
+    return StrokePlan(centerline=list(pts), widths=[width] * n, **kw)
 
 
 def test_single_segment_butt_is_a_rectangle():
@@ -276,3 +276,18 @@ def test_degraded_strokes_still_produce_something():
         assert shoelace(q) == pytest.approx(100.0 * 160.0)
     p2 = plan([(5.0, 5.0), (5.0, 5.0)], width=10.0)
     assert quad_fallback(p2) == [], "a zero-length stroke has no quad to draw"
+
+
+def test_a_width_count_mismatch_is_named_not_an_index_error():
+    # One full width per centerline vertex is the nib's indexing contract: a
+    # short list used to escape as an IndexError from deep inside the geometry,
+    # and a long one was silently ignored (the stroke then drew its tail with
+    # whichever width happened to sit at that index).
+    with pytest.raises(ValueError) as e:
+        StrokePlan(centerline=[(0.0, 0.0), (100.0, 0.0)], widths=[10.0])
+    assert "1" in str(e.value) and "2" in str(e.value), \
+        f"the message must name both lengths: {e.value}"
+    with pytest.raises(ValueError) as e:
+        StrokePlan(centerline=[(0.0, 0.0)], widths=[10.0, 10.0, 10.0])
+    assert "3" in str(e.value) and "1" in str(e.value), \
+        f"the message must name both lengths: {e.value}"
