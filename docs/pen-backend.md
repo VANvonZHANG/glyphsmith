@@ -64,6 +64,33 @@ inputs — `graph.py` does not know about width or style, `style.py` does not dr
 applied to the outline accumulated *so far*, in stream order, which is what the
 legacy drawer does.
 
+### The graph on real glyphs: relation coverage (spec §9-3)
+
+The graph is exported by the CLI (`glyphsmith graph <name> --corpus <dump>`:
+`nodes` are strokes with their type, orientation, endings and centerline,
+`edges` carry the relation `kind`, the two ends and the distance). The relation
+vocabulary — `meets` / `crosses` / `tee` / `parallel` — is exercised on real
+glyphs, not only on the hand-built skeletons of the graph tests. Recorded
+2026-09-19, and reproducible with:
+
+```sh
+$ python scripts/pen_graph_coverage.py --corpus <dump>
+scope=own-strokes slice=200000:220000 names=20000 glyphs=639 meets=333 tee=432 crosses=227 parallel=146 edges=3615
+first examples (glyphs carrying a tee): gt-59024, gt-66774, gt-66845
+coverage: tee, crosses and parallel all occur
+```
+
+The scope is what makes those numbers comparable, so the script prints it: the
+20,000 dump lines at raw line index 200,000–220,000, and per glyph **its own
+strokes** (a pure `99:` reference has no strokes of its own and contributes to
+neither column — its parts are counted where they are defined), built by
+`pen.graph.build` exactly as `glyphsmith graph` builds them. 639 of the 20,000
+names carry their own strokes; the four counts are **the number of those glyphs
+in which the relation occurs at least once** (a glyph can carry several edges of
+one kind — 3,615 edges in total). The script exits non-zero when `tee`,
+`crosses` or `parallel` never occurs, so a slice that fails the acceptance bar
+cannot be read as a pass.
+
 ## Strong vs weak correctness — which level this is
 
 Following Levien & Uguray, *GPU-friendly Stroke Expansion* (SIGGRAPH Asia 2024,
@@ -95,11 +122,25 @@ layer states what it can and cannot prove.
 
 | # | Layer | Where | Can prove | Cannot prove |
 |---|---|---|---|---|
-| ① | analytic cases | `tests/test_pen_nib.py`, `tests/test_pen_centerline.py` | closed-form areas on synthetic skeletons (butt `L·w`, square `L·w + w²`, round `L·w + π(w/2)²`, linear taper `L·(w0+w1)/2`, 90° bends per join style) match the shoelace area to a relative error < 1e-6 | whether the result looks like Song |
-| ② | region equivalence | `tests/test_pen_equivalence.py` + `styles/pen-minimal-probe.yaml` | on polyline-only, TransformOp-free glyphs the body covers the same region as `pen-minimal`: raster IoU > 0.99 **and** mask difference ≤ 1% (worst measured 0.99344 / 0.134%, 7 samples at 512²; off the corners the two agree exactly) | curve strokes (pen follows the true curve, `pen-minimal` the control polygon), decorations, rules, TransformOps |
+| ① | analytic cases | `tests/test_pen_nib.py` | closed-form areas on synthetic skeletons (butt `L·w`, square `L·w + w²`, linear taper `L·(w0+w1)/2`, 90° bends per join style) match the shoelace area to a relative error < 1e-6 — the **polygonal** cases; the two arc cases are inscribed polygons and are bracketed instead (see the note below) | whether the result looks like Song |
+| ② | region equivalence | `tests/test_pen_equivalence.py` + `src/glyphsmith/styles/pen-minimal-probe.yaml` | on polyline-only, TransformOp-free glyphs the body covers the same region as `pen-minimal`: raster IoU > 0.99 **and** mask difference ≤ 1% (worst measured 0.99344 / 0.134%, 7 samples at 512²; off the corners the two agree exactly) | curve strokes (pen follows the true curve, `pen-minimal` the control polygon), decorations, rules, TransformOps |
 | ③ | full-corpus smoke | `scripts/smoke_full.py --backend pen --style X`, `scripts/pen_audit.py --style X` | all 2,221,895 glyphs render with `err=0` for all three styles, and every degradation is counted **per reason** | whether it looks like Song |
 | ④ | style differentials | `tests/test_pen_style_diff.py`, `scripts/pen_style_diff.py` | a style parameter moves the output **in the direction it implies** (thicker verticals ⇒ more ink and a visibly different render; round caps ⇒ more ink at a high IoU; suppressing the wedge rule ⇒ exactly the wedges disappear) | how large the effect *should* be — magnitude is the style author's judgement, and gating it would fit the styles to legacy |
 | ⑤ | self-golden | `tests/test_pen_golden.py` + `tests/fixtures/pen-golden.tsv` | that a refactor does not silently change today's output (3 styles × 3 sample glyphs) | **anything about correctness** — the values come from our own code |
+
+The arc carve-out in layer ①: a round cap and a round join are **flattened
+arcs, and the flattener inscribes the circle** (`nib._arc_points` places the
+chords inside it), so their areas are strictly *below* the closed form and
+cannot meet a two-sided `< 1e-6` bar. What the tests assert there is what is
+exactly true — an interval between the flattened value and the closed form
+(`1670.0 <= a <= 1678.5398` against `L·w + π(w/2)²` = 1678.5398 for the round
+cap; `1993.5 <= a <= 2000.0` against 1994.6349 for the round join, both in
+`tests/test_pen_nib.py`) — plus that every arc vertex lies on the circle.
+Measured relative errors: **3.02e-03** (round cap) and **4.44e-04** (round
+join), i.e. 3,000× and 440× the bound the polygons meet. One published bound for
+both would be false: the plan's own gate wording carved the arcs out (in
+paraphrase, "arcs are asserted as the inscribed value / the true-value
+interval"), and this table dropped the carve-out.
 
 Layer ⑤ is a **drift guard, not evidence**. `scripts/pen_golden_regen.py`
 regenerates the fixture; a changed line is a change to what users see, and
@@ -215,4 +256,4 @@ between the two is expected rather than a defect:
 | `src/glyphsmith/pen/backend.py` | the `Backend` implementation: stream order, transform interleaving, warnings |
 | `src/glyphsmith/styles/*.yaml` | the shipped recipes, including the layer-② probe |
 | `tests/test_pen_*.py` | the five layers above, per module |
-| `scripts/smoke_full.py`, `scripts/pen_audit.py`, `scripts/pen_style_diff.py`, `scripts/pen_golden_regen.py` | the reproduce-the-numbers artifacts |
+| `scripts/smoke_full.py`, `scripts/pen_audit.py`, `scripts/pen_style_diff.py`, `scripts/pen_golden_regen.py`, `scripts/pen_graph_coverage.py` | the reproduce-the-numbers artifacts |

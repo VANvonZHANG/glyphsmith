@@ -95,8 +95,11 @@ $ glyphsmith styles
 {"status": "ok", "data": {"styles": [{"name": "sans-hei", "genre": "sans", "path": "…/styles/sans-hei.yaml", "description": "sans style with 0 decoration(s) and 0 rule(s)"}, …]}, "warnings": [], "hints": []}
 ```
 
-A `--style` that is empty, unknown, or a file that cannot be read is a usage error (exit 2,
-message in `data.error`) rather than a silent fall back to the default.
+With `--backend pen`, a `--style` that is empty, unknown, or a file that cannot be read is a
+usage error (exit 2, message in `data.error`) rather than a silent fall back to the default. The
+other backends never open the style file, so `render --style nope` with them exits 0 by design:
+the value is validated only where it would be read (`cli.py`; an empty `--style` is a usage error
+everywhere, because nobody means it).
 
 ### Resolve the reference closure
 
@@ -201,17 +204,17 @@ external inputs are missing.
 | Golden matrix | kage-engine's own 7,614 cases, per-character fingerprint | **7,614/7,614** |
 | Cross-engine | 1,000 randomly sampled real dump glyphs, fingerprints against kage-engine under Node | **1,000/1,000** |
 | Full-dump smoke | every glyph in `dump_newest_only.txt` (2,221,895), rendered, counted, never written | **2,221,895 glyphs, err=0** |
-| Test suite | `pytest` | **7,783 passed** |
+| Test suite | `pytest` | **8,019 passed** |
 
 The golden fixture is kage-engine's own `test/strokes.js` snapshot
 (`tests/fixtures/kurgm-strokes-golden.tsv`) — the reference implementation's expectations, not
 ours.
 
 ```sh
-pytest -q                                                   # 7,775 passed, 8 skipped (no external data)
+pytest -q                                                   # 8,011 passed, 8 skipped (no external data)
 pytest -m golden -q                                         # 7,614 passed — the golden matrix
 GSF_DUMP=<dump>/dump_newest_only.txt \
-  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 7,783 passed — nothing skipped
+  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 8,019 passed — nothing skipped
 ```
 
 The 8 tests that skip without external resources are the ones that need the 318 MB dump, Node.js, or
@@ -237,7 +240,7 @@ A quick subset check:
 
 ```sh
 $ GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000 --workers 8
-scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.7s rate=7322/s
+scope=stroke-only backend=legacy-kurgm style=serif-song workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.0s rate=10067/s
 ```
 
 ## Known limitations
@@ -273,6 +276,12 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   gate**: 0.7409 at n = 200 (0.7412 at n = 2000) from `scripts/pen_style_diff.py --closure` — the
   flag matters, because the stroke-only default compares mostly blank masks. Full list and the
   five-layer validation story: [`docs/pen-backend.md`](docs/pen-backend.md).
+
+> **Nothing here can tell you whether the pen output *looks like* Song/Ming.** That is an
+> aesthetic judgement about a typeface, and the pen backend does not pretend to score it: the
+> validation layers constrain the geometry and the wiring, and the self-golden fixture only
+> freezes what they produced. The full statement — what each of the five layers can and cannot
+> prove — is in the [pen backend guide](docs/pen-backend.md#validation-five-layers-and-what-each-cannot-tell-you).
 
 ## License and provenance
 

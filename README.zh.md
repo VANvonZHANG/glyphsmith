@@ -90,8 +90,10 @@ $ glyphsmith styles
 {"status": "ok", "data": {"styles": [{"name": "sans-hei", "genre": "sans", "path": "…/styles/sans-hei.yaml", "description": "sans style with 0 decoration(s) and 0 rule(s)"}, …]}, "warnings": [], "hints": []}
 ```
 
-`--style` 为空、未知，或指向读不出来的文件，都是用法错误（退出码 2，消息在 `data.error`），
-不会静默回退到缺省风格。
+`--backend pen` 下，`--style` 为空、未知，或指向读不出来的文件，都是用法错误（退出码 2，
+消息在 `data.error`），不会静默回退到缺省风格。其他后端根本不会打开风格文件，所以
+`render --style nope` 对它们按设计退出 0：这个值只在真正会被读取的地方校验（`cli.py`；空的
+`--style` 在任何后端都是用法错误——没有人会真的想要它）。
 
 ### 解析引用闭包
 
@@ -189,16 +191,16 @@ svg = serif.to_svg()                                  # Outline -> SVG；或 to_
 | golden 矩阵 | kage-engine 自带的 7,614 用例，逐字符指纹 | **7,614/7,614** |
 | 交叉引擎 | 真实 dump 随机抽样 1,000 字形，与 Node 版 kage-engine 指纹对拍 | **1,000/1,000** |
 | 全量冒烟 | `dump_newest_only.txt` 全部字形（2,221,895）渲染并计数、不写盘 | **2,221,895 字形，err=0** |
-| 测试套件 | `pytest` | **7,783 passed** |
+| 测试套件 | `pytest` | **8,019 passed** |
 
 golden 夹具是 kage-engine 自带的 `test/strokes.js` 快照
 （`tests/fixtures/kurgm-strokes-golden.tsv`）——是**参考实现的期望值**，不是我们自己写的期望。
 
 ```sh
-pytest -q                                                   # 7,775 passed, 8 skipped（无外部数据时）
+pytest -q                                                   # 8,011 passed, 8 skipped（无外部数据时）
 pytest -m golden -q                                         # 7,614 passed —— golden 矩阵
 GSF_DUMP=<dump>/dump_newest_only.txt \
-  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 7,783 passed —— 零跳过
+  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 8,019 passed —— 零跳过
 ```
 
 无外部资源时跳过的 8 条，是需要 318MB dump、Node.js 或 kage-engine 检出物的用例；它们
@@ -222,7 +224,7 @@ GSF_DUMP=<dump>/dump_newest_only.txt \
 
 ```sh
 $ GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000 --workers 8
-scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.7s rate=7322/s
+scope=stroke-only backend=legacy-kurgm style=serif-song workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.0s rate=10067/s
 ```
 
 ## 已知限制
@@ -251,6 +253,10 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   不是通过/失败的门槛**：`scripts/pen_style_diff.py --closure` 在 n = 200 时为 0.7409
   （n = 2000 时 0.7412）——`--closure` 不能省，stroke-only 默认口径比的多是空白掩码。
   完整差异清单与五层验证见 [`docs/pen-backend.md`](docs/pen-backend.md)。
+
+> **本仓库里的任何一层都无法判断 pen 的输出「像不像宋体」。** 那是对一款字体的美学判断，pen
+> 后端不假装能给它打分：各验证层约束的是几何与接线，self-golden 只冻结它们产出的结果。完整声明
+> ——五层各自能证明什么、不能证明什么——见 [pen 后端指南](docs/pen-backend.md#validation-five-layers-and-what-each-cannot-tell-you)。
 
 ## 许可证与谱系
 
