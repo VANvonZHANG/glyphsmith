@@ -62,6 +62,54 @@ def test_junctions_are_not_also_reported_as_crossings():
     assert not [e for e in kou.edges if e.kind == "crosses"]
 
 
+def test_junction_on_an_interior_vertex_is_not_also_reported_as_a_crossing():
+    # 力/刀/乃 corner shape: the bend turns at (100,60) — an interior vertex, so
+    # neither segment of it has that point strictly inside, and it is not the
+    # bend's first or last point either. The junction predicates therefore miss
+    # it, the junction-first guard never fires, and is_cross() — which counts
+    # endpoint touching (`<= 0`) — reports a bogus `crosses`.
+    g = build(strokes((3, 0, 0, 40, 60, 100, 60, 100, 160, 0, 0),
+                      (1, 0, 0, 100, 60, 100, -40, 0, 0, 0, 0)))
+    tees = [e for e in g.edges if e.kind == "tee"]
+    assert len(tees) == 1
+    assert (tees[0].a_id, tees[0].a_end, tees[0].b_id, tees[0].b_end) == \
+        (1, "head", 0, "mid"), "the landing end is on the subject, 'mid' on the bend"
+    assert not [e for e in g.edges if e.kind == "crosses"]
+
+
+def test_crossing_through_an_interior_vertex_is_still_a_crossing():
+    # The complement of the rule above: a stroke that passes *through* the
+    # bend's turn point (both its endpoints far away) is a genuine transversal
+    # crossing, not a junction, and must stay one.
+    g = build(strokes((3, 0, 0, 40, 60, 100, 60, 100, 160, 0, 0),
+                      (1, 0, 0, 60, 20, 140, 100, 0, 0, 0, 0)))
+    assert [e for e in g.edges if e.kind == "crosses"]
+    assert not [e for e in g.edges if e.kind in ("tee", "meets")]
+
+
+def test_tail_name_reconstructs_the_original_a3_code():
+    # RStroke splits a3 into a3_opt = floor(a3/100) and a3_100 = a3 % 100, so
+    # 313 arrives as (a3_opt=3, a3_100=13) and 413 as (4, 13). Keyed on a3_100
+    # alone, TAIL_NAMES[313]/[413] were unreachable and both codes silently
+    # collapsed to "heel-ll" — vocabulary pen/style.py's TAIL_WORDS and all
+    # three shipped styles reserve.
+    old = build(strokes((1, 0, 313, 100, 60, 100, 170, 0, 0, 0, 0)))
+    assert old.nodes[0].tail == "heel-ll-old"
+    assert old.nodes[0].a3_opt == 3
+    assert old.to_dict()["nodes"][0]["a3_opt"] == 3
+    new = build(strokes((1, 0, 413, 100, 60, 100, 170, 0, 0, 0, 0)))
+    assert new.nodes[0].tail == "heel-ll-new"
+    plain = build(strokes((1, 0, 13, 100, 60, 100, 170, 0, 0, 0, 0)))
+    assert plain.nodes[0].tail == "heel-ll"
+    assert plain.nodes[0].a3_opt == 0
+    # A code the reconstruction does not name keeps today's raw-int fallback:
+    # 399 -> (3, 99) reconstructs to 399, which is not in the table.
+    odd = build(strokes((1, 0, 399, 100, 60, 100, 170, 0, 0, 0, 0)))
+    assert odd.nodes[0].tail == 99
+    negative = build(strokes((1, 0, -13, 100, 60, 100, 170, 0, 0, 0, 0)))
+    assert negative.nodes[0].tail == -13
+
+
 def test_parallel_needs_same_direction_and_proximity():
     near = build(strokes((1, 0, 0, 50, 40, 50, 160, 0, 0, 0, 0),
                          (1, 0, 0, 58, 40, 58, 160, 0, 0, 0, 0)))

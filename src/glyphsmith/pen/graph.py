@@ -27,6 +27,7 @@ class Node:
     id: int
     a1_100: int
     a1_opt: int
+    a3_opt: int                       # floor(a3/100); see the tail lookup in build()
     type: object                     # word, or the raw int when out of table
     orientation: str
     head: object                     # word, or the raw int when out of table
@@ -80,7 +81,8 @@ class StrokeGraph:
     def to_dict(self) -> dict:
         return {
             "nodes": [{"id": n.id, "type": n.type, "orientation": n.orientation,
-                       "head": n.head, "tail": n.tail, "length": round(n.length, 4),
+                       "head": n.head, "tail": n.tail, "a3_opt": n.a3_opt,
+                       "length": round(n.length, 4),
                        "bbox": n.bbox, "pure_geometry": n.pure_geometry,
                        "centerline": [list(p) for p in n.centerline]} for n in self.nodes],
             "edges": [{"kind": e.kind, "a_id": e.a_id, "a_end": e.a_end,
@@ -141,12 +143,23 @@ def build(strokes, *, meets_tol=1.0, parallel_tol=12.0) -> StrokeGraph:
     for i, st in enumerate(strokes):
         pts = extract(st)
         a1 = st.a1_100 if st.a1_opt == 0 else 1
+        # RStroke splits a3 into a3_opt = floor(a3/100) and a3_100 = a3 mod 100,
+        # so the original code is a3_opt * 100 + a3_100. TAIL_NAMES holds 313 and
+        # 413 ("heel-ll-old"/"heel-ll-new") under that reconstruction only —
+        # keyed on a3_100 alone they are unreachable, and the two codes then
+        # silently collapse to "heel-ll". Reconstruct first, and fall back to the
+        # remainder lookup when the reconstruction names nothing, so an odd
+        # negative or out-of-table code keeps today's raw-int naming.
+        raw_tail = st.a3_opt * 100 + st.a3_100
+        tail = TAIL_NAMES.get(raw_tail, TAIL_NAMES.get(st.a3_100, st.a3_100))
+        # The head needs no such reconstruction: every HEAD_NAMES key (0, 2, 7,
+        # 12, 22, 32) is < 100, so no a2_opt * 100 + a2_100 can ever name one.
         nodes.append(Node(
-            id=i, a1_100=st.a1_100, a1_opt=st.a1_opt,
+            id=i, a1_100=st.a1_100, a1_opt=st.a1_opt, a3_opt=st.a3_opt,
             type=TYPE_NAMES.get(a1, a1),
             orientation=classify_orientation(pts),
             head=HEAD_NAMES.get(st.a2_100, st.a2_100),
-            tail=TAIL_NAMES.get(st.a3_100, st.a3_100),
+            tail=tail,
             length=arc_length(pts), bbox=_bbox(pts), centerline=tuple(pts),
             pure_geometry=st.a1_opt != 0))
     edges = []
@@ -221,8 +234,18 @@ def _min_over_segments(p, node):
 
 
 def _strictly_inside(p, node, meets_tol: float) -> bool:
-    """True when p projects into a segment's interior, away from both of its ends
-    (otherwise it would be a `meets`, not a `tee`)."""
+    """True when p falls on node's interior, away from node's own ends (landing
+    on a first/last point would be a `meets`, not a `tee`).
+
+    Two shapes count. First, a node's *interior vertex* — a turn point of a
+    poly/bend/vcurve, i.e. centerline[1:-1]; without this, a junction onto the
+    corner of 力/刀/乃 matched no segment interior (t is 0.0 or 1.0 there), no
+    junction was recorded, and is_cross() then reported the touch as a `crosses`.
+    Second, a projection into a single segment's interior, away from both of its
+    ends."""
+    for v in node.centerline[1:-1]:
+        if math.hypot(p[0] - v[0], p[1] - v[1]) <= meets_tol:
+            return True
     for i in range(len(node.centerline) - 1):
         a, b = node.centerline[i], node.centerline[i + 1]
         d, t = _point_seg_distance(p, a, b)
