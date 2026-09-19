@@ -291,3 +291,103 @@ def quad_fallback(plan: StrokePlan) -> list[list[tuple[float, float]]]:
                 (pts[i + 1][0] - mx, pts[i + 1][1] - my), (pts[i][0] - mx, pts[i][1] - my)]
         quads.append(quad if shoelace(quad) > 0 else list(reversed(quad)))
     return quads
+
+
+def frame_at(plan: StrokePlan, at: str):
+    """Local frame at one end: origin = the end point, `tangent` points OUTWARD
+    (away from the stroke), `normal` is its left normal, `half` the half-width.
+
+    Decorations are defined once in this frame, so the same recipe works at
+    either end and rotates/scales with the stroke (spec §4.3.5).
+    """
+    pts = plan.centerline
+    dirs = segment_dirs(pts)
+    idx = 0 if at == "head" else len(pts) - 1
+    origin = tuple(pts[idx])
+    if at == "head":
+        d = next((x for x in dirs if x != (0.0, 0.0)), (1.0, 0.0))
+        tangent = (-d[0], -d[1])
+    else:
+        d = next((x for x in reversed(dirs) if x != (0.0, 0.0)), (1.0, 0.0))
+        tangent = d
+    normal = left_normal(tangent)
+    return origin, tangent, normal, plan.widths[idx] / 2.0
+
+
+def _off(origin, tangent, normal, x, y):
+    return (origin[0] + tangent[0] * x + normal[0] * y,
+            origin[1] + tangent[1] * x + normal[1] * y)
+
+
+def _wedge(origin, tangent, normal, w, size):
+    """The measured うろこ: base on the centreline 2*size*w back, apex size*w up
+    (legacy's (0,-h) (-24,0) (-12,-12) at w=4, size=3)."""
+    if size <= 0.0:
+        return []
+    return [_off(origin, tangent, normal, 0.0, -w / 2.0),
+            _off(origin, tangent, normal, -2.0 * size * w, 0.0),
+            _off(origin, tangent, normal, -size * w, -size * w)]
+
+
+def _hook(origin, tangent, normal, w, length, width):
+    """Up-turned tail (跳ね): base across the end, tip along the left normal
+    (for a downward stroke that is leftward, as 寸's vertical hook)."""
+    if length <= 0.0:
+        return []
+    k = width if width > 0.0 else 1.0
+    ell = length * w
+    return [_off(origin, tangent, normal, 0.0, -w / 2.0 * k),
+            _off(origin, tangent, normal, 0.0, w / 2.0 * k),
+            _off(origin, tangent, normal, -0.17 * ell, ell)]
+
+
+def _heel(origin, tangent, normal, w, length, width):
+    """Bottom-corner widening (踵): a trapezoid narrowing away from the end."""
+    if length <= 0.0:
+        return []
+    k = width if width > 0.0 else 1.0
+    ell = length * w
+    return [_off(origin, tangent, normal, 0.0, -w / 2.0 * k),
+            _off(origin, tangent, normal, 0.0, w / 2.0 * k),
+            _off(origin, tangent, normal, -ell, w / 4.0 * k),
+            _off(origin, tangent, normal, -ell, -w / 4.0 * k)]
+
+
+_SHAPES = {"wedge": _wedge, "hook": _hook, "heel": _heel}
+
+
+def decoration_contours(plan: StrokePlan) -> list:
+    """One CCW contour per decoration (spec §4.3.5). A zero size/length means
+    'this style does not draw it' — no contour, no warning."""
+    out = []
+    for d in plan.decorations:
+        shape = _SHAPES.get(d.kind.split("-")[0])
+        if shape is None:
+            continue
+        origin, tangent, normal, _h = frame_at(plan, d.at)
+        w = plan.widths[0 if d.at == "head" else -1]
+        if d.kind == "wedge":
+            pts = shape(origin, tangent, normal, w, d.size)
+        else:
+            pts = shape(origin, tangent, normal, w, d.length, d.width)
+        if len(pts) < 3:
+            continue
+        out.append(pts if shoelace(pts) > 0 else list(reversed(pts)))
+    return out
+
+
+def stroke(plan: StrokePlan) -> "Outline":
+    """A stroke's full drawing: the body plus its decorations (spec §4.3.2/5)."""
+    from glyphsmith.outline import Outline
+
+    o = Outline()
+    if should_degrade(plan):
+        for quad in quad_fallback(plan):
+            o.contours.append([(x, y, 0) for x, y in quad])
+        for c in decoration_contours(plan):
+            o.contours.append([(x, y, 0) for x, y in c])
+        return o
+    o.contours.append([(x, y, 0) for x, y in body_contour(plan)])
+    for c in decoration_contours(plan):
+        o.contours.append([(x, y, 0) for x, y in c])
+    return o
