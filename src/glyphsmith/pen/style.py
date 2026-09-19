@@ -546,22 +546,30 @@ class Style:
         """(subject_end, other_node, distance) tuples satisfying `when`."""
         rel = when["rel"]
         if rel == "near":
-            # Both filters are stated conditions, so both must be the conditions
-            # that run. `from` names the anchor end *and* filters the subject;
-            # `to` filters the hit. `graph.nearest(want=...)` compares against
-            # the orientation band only, so a `to` naming a GSF ending word
-            # (which `_check_rules` accepts) would filter every node out and the
-            # rule would be silently dead — and a `from` band would never be
-            # tested against the subject at all. Ask for the unfiltered nearest
-            # and apply `_matches` here, as the edge branch does.
+            # Both filters are stated conditions, so both must run. `from` names
+            # the anchor end *and* filters the subject: always checked here.
             if when.get("from") and not self._matches(node, when["from"]):
                 return []
             end = when.get("at") or self._subject_end(node, when.get("from"))
-            hit = graph.nearest(node.id, at=end, side=when.get("side"))
+            # The `to` filter splits by kind, because `graph.nearest` compares
+            # `want` against `node.orientation` only:
+            #   * an orientation band is passed through `want=`, which SELECTS
+            #     the nearest node *of that band*. Asking for the unfiltered
+            #     nearest and post-rejecting instead would pick the nearest node
+            #     of any band and drop the rule whenever another band happened
+            #     to be nearer — a silently dead rule, and less faithful than
+            #     legacy, which iterates only its own band (mincho.py:297-301).
+            #   * an ending word (or no filter) cannot be matched by `want=`, so
+            #     the nearest is asked for unfiltered and the hit is POST-
+            #     checked with `_matches`, as the edge branch does.
+            to = when.get("to")
+            want = to if to in BANDS else None
+            hit = graph.nearest(node.id, at=end, want=want,
+                                side=when.get("side"))
             if hit is None:
                 return []
             other, dist, _other_end = hit
-            if when.get("to") and not self._matches(other, when["to"]):
+            if want is None and to is not None and not self._matches(other, to):
                 return []
             return [(end, other, dist)]
         out = []

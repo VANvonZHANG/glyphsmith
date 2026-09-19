@@ -123,6 +123,33 @@ def test_near_honours_an_ending_word_in_to():
         "the nearest left node is flat, not heel-ll"
 
 
+def test_near_band_to_selects_the_nearest_node_of_that_band():
+    # A band `to` (here the shipped 钩长 rule's `to: vertical`) must SELECT the
+    # nearest node of that band via `want=`. Asking for the unfiltered nearest
+    # and rejecting it when it is not the band goes dead whenever a non-vertical
+    # lies closer, whereas legacy scans verticals only (mincho.py:297-301).
+    # The subject's hook tail is at (104,91); the horizontal is 24 away, the
+    # vertical 64, so the rule must scale by 64 (ladder bin 60 → 0.7).
+    s = Style.load("serif-song")
+    vertical = RStroke(1, 0, 0, 40, 15, 40, 181, 0, 0, 0, 0)     # x=40 → 64
+    hook = RStroke(2, 0, 4, 18, 122, 63, 107, 104, 91, 0, 0)     # tail (104,91)
+    nearer_h = RStroke(1, 0, 0, 10, 91, 80, 91, 0, 0, 0, 0)      # y=91 → 24
+    g = build([vertical, hook, nearer_h])
+    assert [n.orientation for n in g.nodes] == ["vertical", "rising",
+                                                "horizontal"]
+    assert g.node(1).tail == "hook"
+    # the premise: the nearest node of *any* band is the horizontal, so a
+    # post-checked band filter would kill the rule instead of scaling it
+    any_hit = g.nearest(1, at="tail", side="left")
+    band_hit = g.nearest(1, at="tail", want="vertical", side="left")
+    assert any_hit[0].id == 2 and any_hit[1] == pytest.approx(24)
+    assert band_hit[0].id == 0 and band_hit[1] == pytest.approx(64)
+    hook_deco = [d for d in s.apply(g)[1].decorations if d.kind == "hook"]
+    assert len(hook_deco) == 1
+    assert hook_deco[0].length == pytest.approx(2.5 * 0.7), \
+        "the rule must fire on the vertical's distance, not the nearer horizontal's"
+
+
 def test_the_shipped_step_table_is_the_legacy_staircase():
     # legacy: adj = 7 - floor(mn / 15) (mincho.py:303) and the hook's length
     # factor is 1 - adj / 10 (mincho_cd.py:457). The table must encode that law
