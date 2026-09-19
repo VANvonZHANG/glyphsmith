@@ -29,6 +29,12 @@ def expand_to_graph(result, style_name: str):
     non-empty `plan.warnings`: `style.plan_for` also writes data-quality notices
     there (`unmapped ending code 8 at tail`, ~12% of real strokes), so counting
     on warnings would report a huge false degeneracy rate.
+
+    `empty` is "this stroke renders no contour at all", the same word the smoke
+    uses for a glyph whose outline is empty, and it is measured on what the nib
+    draws. It must not be measured as "the plan has no centerline": an empty
+    centerline is degenerate first, so that test could never fire and the
+    counter was a constant 0 — a dead counter reads as "nothing was skipped".
     """
     warnings = list(result.warnings)
     items = expand(result.glyph, result.parts, warnings)
@@ -40,8 +46,11 @@ def expand_to_graph(result, style_name: str):
     for plan in plans.values():
         if nib.should_degrade(plan):
             counts["degenerate"] += 1
-        elif not nib.decoration_contours(plan) and not plan.centerline:
-            counts["empty"] += 1
+            # A degraded stroke draws nothing only when every per-segment quad
+            # vanishes (zero-length / non-finite centerline) and no decoration
+            # is left to stack on top.
+            if not nib.quad_fallback(plan) and not nib.decoration_contours(plan):
+                counts["empty"] += 1
         for w in plan.warnings:
             if w not in warnings:
                 warnings.append(w)

@@ -42,6 +42,21 @@ def test_counts_read_degeneracy_from_should_degrade_not_from_warnings():
     assert counts == {"strokes": 1, "degenerate": 1, "empty": 0}
 
 
+def test_counts_empty_is_measured_on_the_drawing_not_on_the_centerline():
+    # `empty` is the smoke vocabulary's word for "renders no contour at all", so
+    # it has to be measured on what the nib draws. The old `not plan.centerline`
+    # test could never fire (an empty centerline is degenerate first), which made
+    # the counter a constant 0 — a dead counter reads as "nothing was skipped",
+    # exactly the false negative the corpus layer exists to prevent.
+    g = parse_kage2("1:8:8:5:5:5:5", "t")      # zero-length, both ends unnameable
+    _graph, _plans, _items, _w, counts = expand_to_graph(R(g), "serif-song")
+    assert counts == {"strokes": 1, "degenerate": 1, "empty": 1}
+
+    drawing = parse_kage2("1:0:0:5:5:5:5", "t")  # zero-length, but the wedge is drawn
+    _graph, _plans, _items, _w, counts = expand_to_graph(R(drawing), "serif-song")
+    assert counts == {"strokes": 1, "degenerate": 1, "empty": 0}
+
+
 def test_plan_to_dict_is_json_ready():
     g = parse_kage2("1:0:0:20:50:180:50", "t")
     _graph, plans, _items, _w, _counts = expand_to_graph(R(g), "serif-song")
