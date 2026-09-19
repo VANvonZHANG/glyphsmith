@@ -374,16 +374,50 @@ class Style:
     def join_for(self, band: str) -> str:
         return self.joins.get(band, self.joins.get("default", "miter"))
 
-    def _ending(self, node, end: str) -> str | None:
-        """The data's ending word for one end, or None when it is ignored."""
+    def _ending(self, node, end: str):
+        """The data's ending word for one end, or None when it is ignored.
+
+        The return value is `object`: `graph.build` hands back the raw int for a
+        code the data layer's name table does not cover (see `_ending_word`).
+        """
         if self.endings_source == "style" or node.pure_geometry:
             return None
         return node.head if end == "head" else node.tail
 
-    def _bands_decorations(self, node, end: str) -> list:
+    def _ending_word(self, node, end: str, warnings: list) -> str | None:
+        """The ending word this style can act on, or None when it cannot name it.
+
+        `graph.build` deliberately keeps a GSF code that misses HEAD_NAMES /
+        TAIL_NAMES as the raw int (`graph.py`: `TAIL_NAMES.get(code, code)`), and
+        that is a corpus path, not a corner case: the tail table covers only
+        {0, 2, 4, 7, 13, 23, 24, 32, 313, 413}, while a 339,530-stroke sample of
+        the real corpus carries 8 (33,200 strokes), 5 (7,179) and smaller counts
+        of 1, 100, 200, 300, 404, 1008, 2008 — about 12% of all strokes. So this
+        must never raise, and it must never guess.
+
+        An unnameable end behaves as if the style had nothing configured for it:
+        no ending decoration, no width modulation, caps left at the band default.
+        Inventing a meaning for the code (8 -> "tip") would be a private alias
+        minted by the pen layer out of the data layer's vocabulary; the gap is in
+        the data layer's name table and belongs reported there.
+
+        The code is therefore reported, once per end, as `unmapped ending code
+        <code> at <end>` — a stable prefix for the corpus audit to aggregate by.
+        Swallowing it would read as "nothing wrong" (note 17), which is exactly
+        the failure mode this project keeps paying for.
+        """
+        word = self._ending(node, end)
+        if word is None or isinstance(word, str):
+            return word
+        msg = f"unmapped ending code {word} at {end}"
+        if msg not in warnings:
+            warnings.append(msg)
+        return None
+
+    def _bands_decorations(self, node, end: str, word: str | None) -> list:
         """Ornaments the style adds where the data left the end `flat`
         (spec §4.2.2 'decorations apply where the ending is flat')."""
-        if node.pure_geometry or self._ending(node, end) != "flat":
+        if node.pure_geometry or word != "flat":
             return []
         out = []
         for kind, spec in self.decorations.items():
@@ -396,42 +430,47 @@ class Style:
                                   join=str(spec.get("join", "bevel"))))
         return out
 
-    def _end_width(self, node, end: str, w: float) -> float:
+    def _end_width(self, word: str | None, w: float) -> float:
         """Apply the ending's width modulation. `tip.min_width` is a multiple of
         the local full width (spec §4.3.5), so it scales with the band."""
-        word = self._ending(node, end)
         spec = self.endings.get(word or "", {})
         if "min_width" in spec:                 # `tip`: taper the end
             return w * min(1.0, float(spec["min_width"]))
         return w
 
     def plan_for(self, node) -> StrokePlan:
+        # The ending words are resolved once, here: a code the name table cannot
+        # name becomes None (no ending geometry, no width modulation) and one
+        # `unmapped ending code <code> at <end>` warning per unnameable end, which
+        # the plan carries to the backend's aggregate.
+        warnings: list[str] = []
+        head_word = self._ending_word(node, "head", warnings)
+        tail_word = self._ending_word(node, "tail", warnings)
+
         prof = self.width_profile[node.orientation]
         ts = vertex_ts(list(node.centerline))
         widths = [profile_at(prof, t) for t in ts]
-        widths[0] = self._end_width(node, "head", widths[0])
-        widths[-1] = self._end_width(node, "tail", widths[-1])
+        widths[0] = self._end_width(head_word, widths[0])
+        widths[-1] = self._end_width(tail_word, widths[-1])
 
         cap_head, cap_tail = self.cap_for(node.orientation), self.cap_for(node.orientation)
-        if self._ending(node, "head") in ("join-h", "join-v"):
+        if head_word in ("join-h", "join-v"):
             cap_head = "butt"
-        if self._ending(node, "tail") in ("join-h", "join-v"):
+        if tail_word in ("join-h", "join-v"):
             cap_tail = "butt"
 
         bend = self.join_for("bend")
-        for word in BEND_WORDS:
-            spec = self.endings.get(word, {})
-            for end in ("head", "tail"):
-                if self._ending(node, end) == word and "join" in spec:
-                    bend = spec["join"]
+        for bend_word in BEND_WORDS:
+            spec = self.endings.get(bend_word, {})
+            if bend_word in (head_word, tail_word) and "join" in spec:
+                bend = spec["join"]
         joins = [bend] * max(0, len(node.centerline) - 2)
 
         decos = []
-        for end in ("head", "tail"):
-            decos += self._bands_decorations(node, end)
-            word = self._ending(node, end)
+        for end, word in (("head", head_word), ("tail", tail_word)):
+            decos += self._bands_decorations(node, end, word)
             spec = self.endings.get(word or "", {})
-            if word in ("hook",) or (word or "").startswith("heel"):
+            if word is not None and (word == "hook" or word.startswith("heel")):
                 decos.append(Decoration(kind=word, at=end,
                                         length=float(spec.get("length", 0.0)),
                                         size=float(spec.get("size", 0.0)),
@@ -442,7 +481,7 @@ class Style:
                           joins=joins,
                           miter_limit=float(self.endings.get("corner-ul", {})
                                             .get("miter_limit", 3.0)),
-                          decorations=decos)
+                          decorations=decos, warnings=warnings)
 
     def apply(self, graph) -> dict:
         return {n.id: self.plan_for(n) for n in graph.nodes}

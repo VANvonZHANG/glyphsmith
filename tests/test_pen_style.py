@@ -236,6 +236,49 @@ def test_wedge_is_band_filtered():
     assert s.plan_for(node(orientation="vertical")).decorations == []
 
 
+def test_unmapped_tail_code_plans_with_no_ending_geometry():
+    # `graph.build` deliberately keeps a GSF tail code that misses TAIL_NAMES as
+    # the raw int, and 8 is the corpus's most common such code (33,200 strokes in
+    # a 339,530-stroke sample; TAIL_NAMES holds only 0/2/4/7/13/23/24/32/313/413).
+    # An unnameable end must plan, not crash, and must not silently pretend the
+    # style has something for it.
+    s = Style.load("serif-song")
+    p = s.plan_for(node(tail=8))
+    assert p.widths[-1] == pytest.approx(4.5), \
+        "no width modulation: tip.min_width belongs to a named ending"
+    assert p.decorations == [], \
+        "no decoration: the wedge is only for an end the data left `flat`"
+    assert p.cap_tail == s.cap_for("horizontal"), "caps stay at the band default"
+    assert p.warnings == ["unmapped ending code 8 at tail"]
+
+
+def test_unmapped_head_code_plans_with_no_ending_geometry():
+    s = Style.load("serif-song")
+    p = s.plan_for(node(head=99))
+    assert p.widths[0] == pytest.approx(4.0), \
+        "no width modulation: tip.min_width belongs to a named ending"
+    assert [d.at for d in p.decorations] == ["tail"], \
+        "the nameable tail keeps its wedge; the unnameable head adds none"
+    assert p.cap_head == s.cap_for("horizontal"), "caps stay at the band default"
+    assert p.warnings == ["unmapped ending code 99 at head"]
+
+
+def test_nameable_ending_codes_produce_no_warning():
+    s = Style.load("serif-song")
+    assert s.plan_for(node(head="join-h", tail="tip")).warnings == []
+
+
+def test_a_corpus_code_missing_from_the_name_table_is_reported_end_to_end():
+    from glyphsmith.pen.graph import build
+    from glyphsmith.legacy_kurgm.rstroke import RStroke
+    s = Style.load("serif-song")
+    # a3 = 8: the code graph.build cannot name, so it hands back the raw int.
+    g = build([RStroke(1, 0, 8, 14, 92, 186, 92, 0, 0, 0, 0)])
+    assert g.nodes[0].tail == 8, "the data layer must not coerce the code"
+    p = s.apply(g)[0]
+    assert p.warnings == ["unmapped ending code 8 at tail"]
+
+
 def test_endings_source_style_ignores_the_data_words():
     text = _GOOD_WITH_STYLE_SOURCE = GOOD.replace("endings_source: data",
                                                   "endings_source: style")
