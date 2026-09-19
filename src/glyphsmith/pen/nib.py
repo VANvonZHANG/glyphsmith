@@ -261,13 +261,20 @@ def _degeneracy_reasons(plan: StrokePlan) -> list[str]:
     return reasons
 
 
+def _warn_once(plan: StrokePlan, msg: str) -> None:
+    """Record `msg` in plan.warnings at most once — the dedupe idiom
+    should_degrade established: a pathological plan repeating the same notice
+    tells the caller nothing new."""
+    if msg not in plan.warnings:
+        plan.warnings.append(msg)
+
+
 def should_degrade(plan: StrokePlan) -> bool:
     """True when the stroke cannot be stroked as a single contour; records why
     in plan.warnings (never raises — warnings are the contract)."""
     reasons = _degeneracy_reasons(plan)
     for r in reasons:
-        if r not in plan.warnings:
-            plan.warnings.append(r)
+        _warn_once(plan, r)
     return bool(reasons)
 
 
@@ -299,6 +306,10 @@ def frame_at(plan: StrokePlan, at: str):
 
     Decorations are defined once in this frame, so the same recipe works at
     either end and rotates/scales with the stroke (spec §4.3.5).
+
+    `at` is "head" or "tail" (style.DECORATION_AT). The vocabulary check is the
+    caller's: decoration_contours validates the end and reports an unknown one
+    before it gets here, so the tail branch below is only ever the real tail.
     """
     pts = plan.centerline
     dirs = segment_dirs(pts)
@@ -354,19 +365,35 @@ def _heel(origin, tangent, normal, w, length, width):
 
 
 _SHAPES = {"wedge": _wedge, "hook": _hook, "heel": _heel}
+# The ends a decoration may sit at, mirroring style.DECORATION_AT. The style
+# validator closes this vocabulary today, but `decorations` is plain data and
+# stroke() is a public entry point, so decoration_contours re-checks it.
+_ENDS = ("head", "tail")
 
 
 def decoration_contours(plan: StrokePlan) -> list:
     """One CCW contour per decoration (spec §4.3.5). A zero size/length means
-    'this style does not draw it' — no contour, no warning."""
+    'this style does not draw it' — no contour, no warning.
+
+    A decoration whose `kind` or `at` the nib does not know is skipped *and*
+    reported once in plan.warnings. It is deliberately not raised: stroke() runs
+    once per stroke across a 2.2M-glyph corpus, where a hard failure on one odd
+    plan is worse than a reported skip — the point is that the drop is visible,
+    not fatal (a dropped datum must never read as "nothing wrong").
+    """
     out = []
     for d in plan.decorations:
-        shape = _SHAPES.get(d.kind.split("-")[0])
+        key = d.kind.split("-")[0]      # "heel-ll" -> "heel"; also picks the args
+        shape = _SHAPES.get(key)
         if shape is None:
+            _warn_once(plan, f"decoration kind {d.kind!r} ignored")
             continue
-        origin, tangent, normal, _h = frame_at(plan, d.at)
-        w = plan.widths[0 if d.at == "head" else -1]
-        if d.kind == "wedge":
+        if d.at not in _ENDS:
+            _warn_once(plan, f"decoration at {d.at!r} ignored")
+            continue
+        origin, tangent, normal, half = frame_at(plan, d.at)
+        w = 2.0 * half                  # frame_at resolved the end's full width
+        if key == "wedge":
             pts = shape(origin, tangent, normal, w, d.size)
         else:
             pts = shape(origin, tangent, normal, w, d.length, d.width)

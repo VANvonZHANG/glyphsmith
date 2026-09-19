@@ -94,3 +94,57 @@ def test_stroke_of_a_degenerate_plan_is_empty_but_warns():
     o = stroke(p)
     assert o.contours == []
     assert any("zero-length" in w for w in p.warnings)
+
+
+def test_unknown_kind_draws_nothing_and_warns_once():
+    # The style validator would reject "sparkle", but `decorations` is plain data
+    # on a public entry point: the skip must be reported, not silent.
+    p = plan([(20.0, 50.0), (180.0, 50.0)], [4.0, 4.0],
+             [Decoration("sparkle", "tail", size=3.0)])
+    assert decoration_contours(p) == []
+    assert p.warnings == ["decoration kind 'sparkle' ignored"]
+
+
+def test_repeated_unknown_kind_warns_only_once():
+    p = plan([(20.0, 50.0), (180.0, 50.0)], [4.0, 4.0],
+             [Decoration("sparkle", "tail", size=3.0)] * 5)
+    assert decoration_contours(p) == []
+    assert p.warnings == ["decoration kind 'sparkle' ignored"]
+
+
+def test_stroke_keeps_the_body_when_a_decoration_is_unknown():
+    # visible, not fatal: the odd decoration is skipped, the stroke still draws.
+    p = plan([(20.0, 50.0), (180.0, 50.0)], [4.0, 4.0],
+             [Decoration("sparkle", "tail", size=3.0)])
+    o = stroke(p)
+    assert len(o.contours) == 1
+    assert p.warnings == ["decoration kind 'sparkle' ignored"]
+
+
+def test_unknown_end_draws_nothing_and_warns_once():
+    # An end that is not "head"/"tail" must not be reinterpreted as the tail.
+    p = plan([(20.0, 50.0), (180.0, 50.0)], [4.0, 4.0],
+             [Decoration("hook", "middle", length=2.0, width=1.0)])
+    assert decoration_contours(p) == []
+    assert p.warnings == ["decoration at 'middle' ignored"]
+
+
+def test_unknown_kind_and_end_each_warn_once_across_repeats():
+    p = plan([(20.0, 50.0), (180.0, 50.0)], [4.0, 4.0],
+             [Decoration("sparkle", "tail", size=1.0),
+              Decoration("sparkle", "tail", size=1.0),
+              Decoration("hook", "middle", length=1.0, width=1.0),
+              Decoration("hook", "middle", length=1.0, width=1.0)])
+    assert decoration_contours(p) == []
+    assert p.warnings == ["decoration kind 'sparkle' ignored",
+                          "decoration at 'middle' ignored"]
+
+
+def test_known_decorations_do_not_warn():
+    # "heel-ll" exercises the "-" suffix dispatch (heel shape, non-wedge args).
+    p = plan([(20.0, 50.0), (180.0, 50.0)], [4.0, 4.0],
+             [Decoration("wedge", "tail", size=3.0),
+              Decoration("hook", "head", length=2.5, width=1.0),
+              Decoration("heel-ll", "tail", length=2.0, width=1.0)])
+    assert len(decoration_contours(p)) == 3
+    assert p.warnings == []
