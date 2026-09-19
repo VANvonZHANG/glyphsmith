@@ -28,6 +28,9 @@ class PenPlan:
     # applies to centerline vertex i + 1.
     joins: list[str] = field(default_factory=list)
     miter_limit: float = 3.0
+    # Why this stroke could not be stroked normally (spec §4.3.4); should_degrade
+    # records its reasons here instead of dropping geometry silently.
+    warnings: list[str] = field(default_factory=list)
 
 
 def shoelace(pts) -> float:
@@ -193,3 +196,84 @@ def body_contour(plan: PenPlan) -> list[tuple[float, float]]:
                        plan.cap_tail, left[-1], right[-1])
     contour = list(reversed(right)) + head + left + tail
     return contour if shoelace(contour) > 0 else list(reversed(contour))
+
+
+def curvature_radius(pts):
+    """Local curvature radius at each interior vertex (circumradius of the
+    triangle formed with its neighbours); None where the three points are
+    collinear (infinite radius = no curvature).
+
+    A radius below the local half-width is exactly the case where the offset
+    curve meets the evolute — the trade-off spec §4.3.4 pins down as "detect
+    and degrade", never "compute the evolute".
+    """
+    out = []
+    for i in range(1, len(pts) - 1):
+        a, b, c = pts[i - 1], pts[i], pts[i + 1]
+        ab = math.hypot(b[0] - a[0], b[1] - a[1])
+        bc = math.hypot(c[0] - b[0], c[1] - b[1])
+        ca = math.hypot(c[0] - a[0], c[1] - a[1])
+        area2 = abs(_cross((b[0] - a[0], b[1] - a[1]), (c[0] - a[0], c[1] - a[1])))
+        if area2 <= 1e-12 or ab == 0.0 or bc == 0.0 or ca == 0.0:
+            out.append(None)
+        else:
+            out.append(ab * bc * ca / (2.0 * area2))
+    return out
+
+
+def _degeneracy_reasons(plan: PenPlan) -> list[str]:
+    """Every reason this stroke cannot be stroked normally (spec §4.3.4)."""
+    pts = plan.centerline
+    reasons = []
+    if len(pts) < 2:
+        reasons.append("zero-length centerline")
+        return reasons
+    if not all(math.isfinite(v) for p in pts for v in p):
+        reasons.append("non-finite centerline coordinate")
+        return reasons
+    if all(abs(p[0] - pts[0][0]) <= 1e-12 and abs(p[1] - pts[0][1]) <= 1e-12
+           for p in pts):
+        reasons.append("zero-length centerline")
+        return reasons
+    if not any(w > 0.0 for w in plan.widths):
+        reasons.append("non-positive width profile")
+        return reasons
+    radii = curvature_radius(pts)
+    for i, r in enumerate(radii):
+        if r is not None and r < plan.widths[i + 1] / 2.0:
+            reasons.append(f"degraded: curvature radius {r:.2f} < half-width "
+                           f"{plan.widths[i + 1] / 2.0:.2f} at vertex {i + 1}")
+            break
+    return reasons
+
+
+def should_degrade(plan: PenPlan) -> bool:
+    """True when the stroke cannot be stroked as a single contour; records why
+    in plan.warnings (never raises — warnings are the contract)."""
+    reasons = _degeneracy_reasons(plan)
+    for r in reasons:
+        if r not in plan.warnings:
+            plan.warnings.append(r)
+    return bool(reasons)
+
+
+def quad_fallback(plan: PenPlan) -> list[list[tuple[float, float]]]:
+    """Per-segment quads (pen-minimal's shape) for a stroke that must degrade.
+
+    Returns [] for a zero-length or non-finite stroke: there is nothing to draw,
+    and the caller has already been told why via plan.warnings.
+    """
+    pts = plan.centerline
+    if len(pts) < 2 or not all(math.isfinite(v) for p in pts for v in p):
+        return []
+    quads = []
+    for i in range(len(pts) - 1):
+        d = (pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+        n = math.hypot(d[0], d[1])
+        if n == 0.0:
+            continue
+        mx, my = -d[1] / n * plan.widths[i] / 2.0, d[0] / n * plan.widths[i] / 2.0
+        quad = [(pts[i][0] + mx, pts[i][1] + my), (pts[i + 1][0] + mx, pts[i + 1][1] + my),
+                (pts[i + 1][0] - mx, pts[i + 1][1] - my), (pts[i][0] - mx, pts[i][1] - my)]
+        quads.append(quad if shoelace(quad) > 0 else list(reversed(quad)))
+    return quads

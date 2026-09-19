@@ -216,3 +216,63 @@ def test_join_style_applies_per_vertex():
     pts = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (200.0, 100.0)]
     c = body_contour(plan(pts, width=10.0, joins=["miter", "bevel"]))
     assert shoelace(c) == pytest.approx(3000.0 - 12.5)
+
+
+from glyphsmith.pen.nib import curvature_radius, quad_fallback, should_degrade
+
+
+def test_curvature_radius_of_a_straight_run_is_none():
+    assert curvature_radius([(0.0, 0.0), (50.0, 0.0), (100.0, 0.0)]) == [None]
+
+
+def test_curvature_radius_of_a_quarter_circle():
+    # three points on a radius-50 circle → R = 50
+    pts = [(50.0, 0.0), (35.355339, 35.355339), (0.0, 50.0)]
+    r = curvature_radius(pts)[0]
+    assert r == pytest.approx(50.0, rel=1e-5)
+
+
+def test_should_degrade_when_radius_is_below_half_width():
+    pts = [(50.0, 0.0), (35.355339, 35.355339), (0.0, 50.0)]      # R = 50
+    assert not should_degrade(plan(pts, width=10.0))              # half = 5 < 50
+    assert should_degrade(plan(pts, width=120.0))                 # half = 60 > 50
+
+
+def test_quad_fallback_covers_each_segment_and_keeps_the_area():
+    p = plan(BEND, width=10.0)
+    quads = quad_fallback(p)
+    assert len(quads) == 2
+    # each quad is a w x L rectangle; their union area is not additive (they
+    # overlap) but each individual quad has the exact segment area
+    assert shoelace(quads[0]) == pytest.approx(1000.0)
+    assert shoelace(quads[1]) == pytest.approx(1000.0)
+
+
+def test_degenerate_inputs_are_reported_not_raised():
+    zero_len = plan([(5.0, 5.0), (5.0, 5.0)], width=10.0)
+    assert should_degrade(zero_len)
+    assert any("zero-length" in w for w in zero_len.warnings)
+
+    nan = plan([(float("nan"), 0.0), (100.0, 0.0)], width=10.0)
+    assert should_degrade(nan)
+    assert any("non-finite" in w for w in nan.warnings)
+
+    zero_w = plan([(0.0, 0.0), (100.0, 0.0)], width=0.0)
+    assert should_degrade(zero_w)
+    assert any("non-positive width" in w for w in zero_w.warnings)
+
+
+def test_degraded_strokes_still_produce_something():
+    # A degraded stroke must still draw (spec §4.3.4 wants a fallback, not a hole).
+    # Input calibrated so the degradation REALLY fires: BEND's corner has
+    # circumradius 100*100*141.42/(2*10000) = 70.71, so width 160 (half 80) is
+    # above it while width 120 (half 60) is not — the earlier draft used 120 and
+    # the assertion passed vacuously on its first disjunct.
+    p = plan(BEND, width=160.0)
+    assert should_degrade(p) is True
+    quads = quad_fallback(p)
+    assert len(quads) == 2, "the fallback tiles the stroke segment by segment"
+    for q in quads:
+        assert shoelace(q) == pytest.approx(100.0 * 160.0)
+    p2 = plan([(5.0, 5.0), (5.0, 5.0)], width=10.0)
+    assert quad_fallback(p2) == [], "a zero-length stroke has no quad to draw"
