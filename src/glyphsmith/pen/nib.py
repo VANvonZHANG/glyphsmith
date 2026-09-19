@@ -24,7 +24,9 @@ class PenPlan:
     widths: list[float]                      # full width per vertex
     cap_head: str = "butt"
     cap_tail: str = "butt"
-    joins: list[str] = field(default_factory=list)      # per interior vertex
+    # One entry per interior vertex: len(centerline) - 2 entries, where entry i
+    # applies to centerline vertex i + 1.
+    joins: list[str] = field(default_factory=list)
     miter_limit: float = 3.0
 
 
@@ -84,8 +86,12 @@ def _join_replace(prev, nxt, vertex, d_prev, d_next, half, kind, miter_limit, si
     bend gives 2000 instead of the correct 1987.5 — and 2000 happens to be the
     miter answer, so only a bevel/round test catches it).
 
-    Convex (outer) corners follow the join style. T5 adds miter and round.
+    Convex (outer) corners follow the join style. T5 adds miter and round: until
+    then any unimplemented kind raises rather than silently falling back to bevel.
     """
+    if kind not in ("", "bevel"):
+        raise NotImplementedError(
+            f"join kind {kind!r} is not implemented yet (T5 adds miter and round)")
     cross = _cross(d_prev, d_next)
     if abs(cross) < 1e-12:                      # collinear: the pair coincides
         return [nxt] if _close(prev, nxt) else [prev, nxt]
@@ -109,14 +115,21 @@ def walk_side(pts, dirs, half, sign, joins, miter_limit):
     for j in range(1, n - 1):
         prev = out.pop()                    # == b_off[j-1], not yet committed
         out += _join_replace(prev, a_off[j], pts[j], dirs[j - 1], dirs[j],
-                             half[j], joins[j], miter_limit, sign)
+                             half[j], joins[j - 1], miter_limit, sign)
         out.append(b_off[j])
     return out
 
 
 def _cap_points(p_end, out_dir, half, style, start, stop):
-    """Cap interior points walking from `start` to `stop` (both excluded)."""
-    return []                   # T4 adds square/round
+    """Cap interior points walking from `start` to `stop` (both excluded).
+
+    T4 adds square and round: until then any unimplemented style raises rather
+    than silently degrading to a butt cap.
+    """
+    if style != "butt":
+        raise NotImplementedError(
+            f"cap style {style!r} is not implemented yet (T4 adds square and round)")
+    return []
 
 
 def body_contour(plan: PenPlan) -> list[tuple[float, float]]:
@@ -124,7 +137,7 @@ def body_contour(plan: PenPlan) -> list[tuple[float, float]]:
     pts = plan.centerline
     half = [w / 2.0 for w in plan.widths]
     dirs = segment_dirs(pts)
-    joins = list(plan.joins) + [""] * max(0, len(pts) - 1 - len(plan.joins))
+    joins = list(plan.joins) + [""] * max(0, len(pts) - 2 - len(plan.joins))
     right = walk_side(pts, dirs, half, -1.0, joins, plan.miter_limit)
     left = walk_side(pts, dirs, half, +1.0, joins, plan.miter_limit)
     head = _cap_points(pts[0], dirs[0], half[0], plan.cap_head, right[-1], left[0])

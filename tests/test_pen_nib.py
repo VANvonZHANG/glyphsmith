@@ -68,6 +68,28 @@ def test_collinear_join_adds_nothing():
     assert len(c) == 6
 
 
+def test_joins_are_indexed_per_interior_vertex():
+    # A 4-point centerline has 2 interior vertices; entry i of `joins` belongs to
+    # vertex i+1. The unimplemented-join guard makes the mapping observable: with
+    # the off-by-one, the single entry landed on no vertex at all and nothing raised.
+    pts = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (200.0, 100.0)]
+    with pytest.raises(NotImplementedError):
+        body_contour(plan(pts, width=10.0, joins=["miter"]))
+    with pytest.raises(NotImplementedError):
+        body_contour(plan(pts, width=10.0, joins=["bevel", "miter"]))
+    # a fully implemented join list stays silent and yields a closed CCW contour
+    c = body_contour(plan(pts, width=10.0, joins=["bevel", "bevel"]))
+    assert shoelace(c) > 0.0
+    assert c[0] != c[-1]
+
+
+def test_unimplemented_cap_styles_raise():
+    with pytest.raises(NotImplementedError):
+        body_contour(plan([(0.0, 0.0), (100.0, 0.0)], cap_head="round"))
+    with pytest.raises(NotImplementedError):
+        body_contour(plan([(0.0, 0.0), (100.0, 0.0)], cap_tail="square"))
+
+
 def test_no_duplicate_consecutive_points():
     # duplicated vertices are silent geometry bugs: they break the arc/join maths
     # downstream and inflate any vertex-count assertion
