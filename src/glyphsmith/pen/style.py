@@ -8,10 +8,12 @@ file is exactly where a typo would hide.
 """
 from __future__ import annotations
 
+import copy
 import math
 import re
 from dataclasses import dataclass
 from dataclasses import replace as _dc_replace
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -169,6 +171,72 @@ def ladder(value: float, steps) -> float:
     return factor
 
 
+# ── reading a style file ───────────────────────────────────────────────────
+# `Style.load` runs once per glyph on the render path (the pen backend loads
+# the style inside `expand_to_graph`), and one load is 3.4 ms of YAML parse
+# against 0.01 ms of stat + read: memoising the parse is what keeps a
+# full-corpus run from spending ~500 s per worker on the same recipe. The
+# cache hands out a copy, never the mapping itself (see `_read_style_file`).
+
+
+@lru_cache(maxsize=None)
+def _parse_style_file(resolved: str, mtime_ns: int, size: int, text: str) -> dict:
+    """Parse and top-level-check one revision of one style file.
+
+    The key is the resolved path, the file's stat and the text actually read.
+    The stat alone is not enough to satisfy "an edited file is re-read": this
+    filesystem stamps mtime with a ~4 ms granule (two immediate rewrites of the
+    same length share an mtime_ns and a size — measured, not assumed), so a
+    stat-keyed cache serves the old parse until the clock moves and is exactly
+    the silent staleness this project forbids. The text is in hand anyway (the
+    read cannot be skipped: see `_read_style_file`) and closes that hole, so a
+    run can never keep serving a style the author has since edited.
+
+    `lru_cache` memoises a returned mapping only; an exception is not stored,
+    so a YAML syntax error or an empty file re-raises on every load instead of
+    being cached as if the failure were the parse.
+
+    Entries are one per (file, revision) pair the process has read, so the
+    unbounded cache is a handful of small mappings, not a growing one.
+    """
+    path = Path(resolved)
+    try:
+        raw = yaml.load(text, Loader=_StyleLoader)
+    except yaml.YAMLError as e:
+        raise StyleError(f"{path}: cannot parse YAML: {e}") from None
+    if raw is None:
+        raise StyleError(f"{path}: empty style file")
+    _check_keys(raw, _TOP_KEYS, str(path))
+    return raw
+
+
+def _read_style_file(path: Path) -> dict:
+    """Read a style file and return a *private* copy of its parsed mapping.
+
+    The read is deliberately not behind the cache, only the parse: the read is
+    where an unreadable file is reported, and a cache hit must not turn "this
+    file cannot be read now" into the parse of an earlier, readable revision.
+    `tests/test_cli.py::test_styles_command_reports_an_unreadable_style_file`
+    makes exactly that call — it loads sans-hei.yaml (twice, in the same
+    process), then makes it unreadable and requires the error, which a
+    read-through cache answers with exit 0 (`assert 0 == 2`, measured). The
+    read is 11 us against the 3450 us parse, 0.3% of what the cache saves, so
+    it is paid on every load.
+
+    The copy is what keeps two `Style` objects independent: `Style` stores
+    sub-dicts of the parse as they are (a rule's `when`/`then`) and a caller
+    may hold and mutate a loaded style, so the mapping the cache holds must
+    never be reachable from one. ~50 us per load.
+    """
+    try:
+        st = path.stat()
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise StyleError(f"{path}: cannot read style file: {e}") from None
+    return copy.deepcopy(
+        _parse_style_file(str(path), st.st_mtime_ns, st.st_size, text))
+
+
 class Style:
     """A validated style file. Loading never guesses: every field is checked."""
 
@@ -189,22 +257,14 @@ class Style:
     # ── loading ────────────────────────────────────────────────────────────
     @classmethod
     def load(cls, source) -> "Style":
-        path = cls._resolve(source)
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as e:
-            # T8 review: a raw OSError from here reached the CLI's corpus-worded
-            # handler ("cannot open corpus <path>"). A style read is a style
-            # error, and it has to name the file it could not read.
-            raise StyleError(f"{path}: cannot read style file: {e}") from None
-        try:
-            raw = yaml.load(text, Loader=_StyleLoader)
-        except yaml.YAMLError as e:
-            raise StyleError(f"{path}: cannot parse YAML: {e}") from None
-        if raw is None:
-            raise StyleError(f"{path}: empty style file")
-        _check_keys(raw, _TOP_KEYS, str(path))
-        return cls(path, raw)
+        # The path is resolved so that every spelling of one file (a name, a
+        # relative path, a symlink) is one cache entry, and so that the errors
+        # name the file's real identity. T8 review: a raw OSError from the read
+        # used to reach the CLI's corpus-worded handler ("cannot open corpus
+        # <path>"); a style read is a style error naming the file, and
+        # `_read_style_file` keeps that true on a cache hit as well.
+        path = cls._resolve(source).resolve()
+        return cls(path, _read_style_file(path))
 
     @staticmethod
     def _resolve(source) -> Path:

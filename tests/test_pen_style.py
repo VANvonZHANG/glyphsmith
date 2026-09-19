@@ -2,6 +2,7 @@
 import re
 
 import pytest
+import yaml
 
 from glyphsmith.pen.style import ENDING_WORDS, Style, StyleError
 
@@ -198,6 +199,77 @@ def test_an_unreadable_style_file_is_a_style_error_naming_it(tmp_path, monkeypat
     with pytest.raises(StyleError) as e:
         Style.load(p)
     assert str(p) in str(e.value) and "Permission denied" in str(e.value)
+
+
+def _count_parses(monkeypatch):
+    """Count the YAML parses: `pen/style.py` reads a file with `yaml.load`."""
+    import glyphsmith.pen.style as style_mod
+    calls = []
+    real = yaml.load
+
+    def counting(*a, **kw):
+        calls.append(1)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(style_mod.yaml, "load", counting)
+    return calls
+
+
+def test_an_unchanged_style_file_is_parsed_once(tmp_path, monkeypatch):
+    # A run loads its style once per glyph (`pen/backend.expand_to_graph`), so the
+    # parse has to be memoised: it is 3.4 ms of the 3.6 ms load, i.e. ~500 s per
+    # worker over the 2.2M-glyph corpus, against a 144.6 s full smoke in v1.
+    p = write(tmp_path, GOOD)
+    parses = _count_parses(monkeypatch)
+    first = Style.load(p)
+    second = Style.load(p)
+    assert len(parses) == 1
+    assert first is not second, "each load still builds its own Style"
+
+
+def test_a_changed_style_file_is_reloaded(tmp_path, monkeypatch):
+    # No silent staleness: the cache key carries the file's stat *and* the text
+    # read, so an edit is a new entry. The edited value keeps its length and
+    # lands inside this filesystem's ~4 ms mtime granule, so the stat trio alone
+    # still reads as "unchanged" (measured: keying on it fails this very test);
+    # the text is what reveals the edit.
+    p = write(tmp_path, GOOD)
+    assert Style.load(p).endings["hook"]["length"] == 2.5
+    p.write_text(GOOD.replace("length: 2.5", "length: 9.5"), encoding="utf-8")
+    assert Style.load(p).endings["hook"]["length"] == 9.5
+    assert Style.load(p).endings["hook"]["length"] == 9.5
+
+
+def test_a_yaml_error_is_not_cached_as_a_result(tmp_path, monkeypatch):
+    # `lru_cache` stores a returned value only, so a broken file re-raises on
+    # every load instead of being served as if the failure were the parse.
+    p = write(tmp_path, "name: probe\nwidth_profile: [oops\n")
+    parses = _count_parses(monkeypatch)
+    for _ in range(2):
+        with pytest.raises(StyleError) as e:
+            Style.load(p)
+        assert str(p) in str(e.value)
+    assert len(parses) == 2
+
+
+def test_two_styles_loaded_from_one_file_are_independent(tmp_path):
+    # The cache shares the *parse*, never the parse's mutable structure: a caller
+    # may hold and perturb a Style (other tests do), so the nested `when`/`then`
+    # dicts must be private to each Style — and the cached mapping has to stay
+    # pristine for the next load.
+    rule = "rules: [{when: {rel: meets}, then: {suppress: wedge}}]"
+    p = write(tmp_path, GOOD.replace("rules: []", rule))
+    a = Style.load(p)
+    b = Style.load(p)
+    a.rules[0]["when"]["rel"] = "crosses"
+    a.rules[0]["then"].pop("suppress")
+    a.endings["hook"]["length"] = 99.0
+    a.decorations["wedge"]["size"] = 99.0
+    assert b.rules[0]["when"]["rel"] == "meets"
+    assert b.rules[0]["then"] == {"suppress": "wedge"}
+    assert b.endings["hook"]["length"] == 2.5
+    assert b.decorations["wedge"]["size"] == 3.0
+    assert Style.load(p).rules[0]["when"]["rel"] == "meets"
 
 
 def test_unknown_style_name_lists_the_available_ones():
