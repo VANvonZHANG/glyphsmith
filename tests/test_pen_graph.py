@@ -150,7 +150,7 @@ def test_to_dict_is_json_ready():
     json.dumps(d)                        # must not raise on the tuple fields
 
 
-# ── nearest(): the metric query the 钩长 rule consumes ──
+# ── nearest(): the metric query the hook-length rule consumes ──
 def test_nearest_finds_the_closest_vertical_to_the_left():
     # 扌-like: a vertical at x=60, the hook stroke's tail at (104, 91)
     g = build(strokes((1, 0, 4, 60, 15, 60, 181, 0, 0, 0, 0),

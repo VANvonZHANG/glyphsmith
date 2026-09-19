@@ -334,7 +334,7 @@ def _off(origin, tangent, normal, x, y):
 
 
 def _wedge(origin, tangent, normal, w, size):
-    """The measured うろこ: base on the centreline 2*size*w back, apex size*w up
+    """The measured wedge: base on the centreline 2*size*w back, apex size*w up
     (legacy's (0,-h) (-24,0) (-12,-12) at w=4, size=3)."""
     if size <= 0.0:
         return []
@@ -344,8 +344,8 @@ def _wedge(origin, tangent, normal, w, size):
 
 
 def _hook(origin, tangent, normal, w, length, width):
-    """Up-turned tail (跳ね): base across the end, tip along the left normal
-    (for a downward stroke that is leftward, as 寸's vertical hook)."""
+    """Up-turned tail (hook): base across the end, tip along the left normal
+    (for a downward stroke that is leftward, as a vertical stroke's hook)."""
     if length <= 0.0:
         return []
     k = width if width > 0.0 else 1.0
@@ -356,7 +356,7 @@ def _hook(origin, tangent, normal, w, length, width):
 
 
 def _heel(origin, tangent, normal, w, length, width):
-    """Bottom-corner widening (踵): a trapezoid narrowing away from the end."""
+    """Bottom-corner widening (heel): a trapezoid narrowing away from the end."""
     if length <= 0.0:
         return []
     k = width if width > 0.0 else 1.0

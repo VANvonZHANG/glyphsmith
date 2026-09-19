@@ -124,7 +124,7 @@ def test_near_honours_an_ending_word_in_to():
 
 
 def test_near_band_to_selects_the_nearest_node_of_that_band():
-    # A band `to` (here the shipped 钩长 rule's `to: vertical`) must SELECT the
+    # A band `to` (here the shipped hook-length rule's `to: vertical`) must SELECT
     # nearest node of that band via `want=`. Asking for the unfiltered nearest
     # and rejecting it when it is not the band goes dead whenever a non-vertical
     # lies closer, whereas legacy scans verticals only (mincho.py:297-301).

@@ -61,9 +61,10 @@ def classify_orientation(pts) -> str:
     """The stroke's width-profile band, from its start->end chord (spec §4.2.1).
 
     The chord (not the arc) is what the design fixes: calligraphic direction is
-    about where the stroke goes, and a bent stroke like 竖弯钩 still reads as a
-    vertical. Degenerate centerlines fall back to "horizontal" — the nib layer
-    drops zero-length strokes anyway, so the value only has to be total.
+    about where the stroke goes, and a bent stroke like a vertical-hook still
+    reads as a vertical. Degenerate centerlines fall back to "horizontal" — the
+    nib layer drops zero-length strokes anyway, so the value only has to be
+    total.
     """
     if len(pts) < 2:
         return "horizontal"

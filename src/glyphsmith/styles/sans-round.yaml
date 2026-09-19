@@ -16,13 +16,13 @@ endings:                      # hei-ti has a hook, it is just squarer — same k
   corner-ul: {join: miter, miter_limit: 4.0}
   corner-ur: {join: miter, miter_limit: 4.0}
   join-v: {}
-  hook: {length: 2.5, width: 1.0, join: miter}
+  hook: {length: 2.5, width: 1.0}
   heel-ll: {length: 0.1}
   heel-lr: {length: 0.1}
   heel-ll-old: {length: 0.1}
   heel-ll-new: {length: 0.1}
   cap-t: {}
-decorations: {}               # no うろこ
+decorations: {}               # no wedge
 caps: {default: round}
 joins: {default: round}
 rules: []

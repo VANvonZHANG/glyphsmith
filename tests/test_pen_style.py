@@ -122,6 +122,92 @@ def test_validation_is_loud(tmp_path, mutate, needle):
     assert needle in str(e.value), f"message must name the offending key: {e.value}"
 
 
+@pytest.mark.parametrize("mutate,needle", [
+    # A hook/heel ornament is a single closed contour (nib._hook / nib._heel):
+    # there is no vertex join for `join` to configure, and the nib reads only
+    # `length`/`width` for it. Both used to be accepted and then ignored.
+    (lambda t: t.replace("hook: {length: 2.5, width: 1.0}",
+                         "hook: {length: 2.5, width: 1.0, join: round}"),
+     "endings.hook.join"),
+    (lambda t: t.replace("hook: {length: 2.5, width: 1.0}",
+                         "hook: {length: 2.5, width: 1.0, size: 1.0}"),
+     "endings.hook"),
+    (lambda t: t.replace("heel-ll: {length: 0.1}",
+                         "heel-ll: {length: 0.1, size: 1.0}"),
+     "endings.heel-ll"),
+    # `tip` modulates the end width (min_width) and draws no ornament, so the
+    # ornament sizes cannot apply to it.
+    (lambda t: t.replace("tip: {min_width: 0.15}",
+                         "tip: {min_width: 0.15, length: 1.0}"),
+     "endings.tip"),
+    (lambda t: t.replace("flat: {}", "flat: {join: miter}"),
+     "endings.flat.join"),
+    (lambda t: t.replace("corner-ul: {join: miter}",
+                         "corner-ul: {join: miter, length: 1.0}"),
+     "endings.corner-ul"),
+    # A wedge is measured by `size` alone (nib._wedge takes no length/width).
+    (lambda t: t.replace("wedge: {on: horizontal, at: tail, shape: triangle, size: 3.0}",
+                         "wedge: {on: horizontal, at: tail, shape: triangle, "
+                         "size: 3.0, length: 1.0}"),
+     "decorations.wedge"),
+])
+def test_parameters_the_geometry_never_reads_are_rejected(tmp_path, mutate, needle):
+    # The whole point of validating a style file: a parameter the loader admits
+    # and the nib never reads is a silent no-op, and the author reads acceptance
+    # as "this did something" (the spec's own §4.2.2 example shows a hook join,
+    # which is what the shipped styles used to copy).
+    with pytest.raises(StyleError) as e:
+        Style.load(write(tmp_path, mutate(GOOD)))
+    assert needle in str(e.value), f"message must name the offending key: {e.value}"
+
+
+def test_every_key_a_word_reads_still_loads(tmp_path):
+    # The complement of the rejection above: the parameters the planner does
+    # read — a corner's join/miter_limit, a hook's and heel's length/width, a
+    # tip's min_width — stay accepted, so the stricter schema rejects no
+    # working style.
+    text = (GOOD
+            .replace("corner-ul: {join: miter}",
+                     "corner-ul: {join: miter, miter_limit: 3.5}")
+            .replace("heel-ll: {length: 0.1}",
+                     "heel-ll: {length: 0.1, width: 1.2}")
+            .replace("decorations:",
+                     "decorations:\n"
+                     "  hook: {on: horizontal, at: tail, shape: triangle, "
+                     "length: 2.0, width: 1.0}"))
+    s = Style.load(write(tmp_path, text))
+    assert s.endings["corner-ul"] == {"join": "miter", "miter_limit": 3.5}
+    assert s.endings["heel-ll"] == {"length": 0.1, "width": 1.2}
+    assert s.decorations["hook"]["length"] == 2.0
+
+
+def test_ending_shape_is_validated_against_the_shape_vocabulary(tmp_path):
+    # `decorations.<word>.shape` was validated from the start while
+    # `endings.<word>.shape` was admitted and never checked, so a typo
+    # (`shape: triangl`) loaded as "nothing wrong".
+    ok = GOOD.replace("  tip: {min_width: 0.15}",
+                      "  tip: {min_width: 0.15, shape: triangle}")
+    assert Style.load(write(tmp_path, ok)).endings["tip"]["shape"] == "triangle"
+
+    bad = GOOD.replace("  tip: {min_width: 0.15}",
+                       "  tip: {min_width: 0.15, shape: triangl}")
+    with pytest.raises(StyleError) as e:
+        Style.load(write(tmp_path, bad))
+    assert "endings.tip.shape" in str(e.value) and "triangle" in str(e.value)
+
+
+def test_a_non_utf8_style_file_is_a_style_error_naming_it(tmp_path):
+    # UnicodeDecodeError is a ValueError, not an OSError, so it used to pass
+    # straight through this handler and through every CLI handler: the command
+    # died as a raw traceback with exit 1 instead of exit 2 + JSON.
+    p = tmp_path / "bad-utf8.yaml"
+    p.write_bytes(b"name: probe\n# \xff\xfe not utf-8\n")
+    with pytest.raises(StyleError) as e:
+        Style.load(p)
+    assert str(p) in str(e.value), f"message must name the file: {e.value}"
+    assert "utf-8" in str(e.value)
+
+
 def test_scale_accepts_every_numeric_decoration_field(tmp_path):
     # The three params a scale can act on, in both the scalar and the ladder
     # form; anything else is rejected above.
@@ -327,8 +413,11 @@ def test_hei_and_round_differ_in_exactly_two_lines():
 def test_hei_is_uniform_width_and_ignores_the_wedge():
     s = Style.load("sans-hei")
     assert {tuple(map(tuple, v)) for v in s.width_profile.values()} == {((0.0, 10.0), (1.0, 10.0))}
-    assert s.decorations == {}, "hei-ti has no うろこ"
-    assert s.endings["hook"]["join"] == "miter"
+    assert s.decorations == {}, "hei-ti has no wedge"
+    # The hook's only parameters are the ones its geometry reads: it is one
+    # closed contour, so there is no join for a style to set here (the shipped
+    # styles used to carry `join: miter`/`round`, which nothing read).
+    assert s.endings["hook"] == {"length": 2.5, "width": 1.0}
 
 
 def test_round_differs_from_hei_only_in_caps_and_joins():

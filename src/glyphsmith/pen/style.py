@@ -45,18 +45,40 @@ THEN_WORDS = ("suppress", "replace", "scale")
 
 _TOP_KEYS = {"name", "genre", "endings_source", "width_profile", "endings",
              "decorations", "caps", "joins", "rules"}
-_ENDING_KEYS = {"length", "width", "size", "shape", "min_width", "join",
-                "miter_limit"}
 # `then.scale` multiplies a number that is already on a Decoration, so its
-# params are exactly the numeric Decoration fields — a strict subset of
-# _ENDING_KEYS. `shape`/`join` are not numbers and `min_width`/`miter_limit`
+# params are exactly the numeric Decoration fields — a strict subset of the
+# ending vocabulary. `shape`/`join` are not numbers and `min_width`/`miter_limit`
 # belong to an ending's planning, not to an ornament: accepting them here used
 # to defer the failure to a TypeError inside `apply`.
 _SCALE_KEYS = {"length", "size", "width"}
-_DECOR_KEYS = {"on", "at", "shape", "size", "length", "width"}
+# `decorations` is checked per kind, not with one flat vocabulary: the nib reads
+# `size` for a wedge and `length`/`width` for a hook or heel (`nib._SHAPES`,
+# dispatched by kind in `decoration_contours`), so the other numbers would be
+# accepted and then silently ignored — the class of datum loss this module
+# exists to catch. `shape` is admitted on both (there is one shape today) and
+# validated against DECORATION_SHAPES, so a typo is loud.
+_DECOR_COMMON_KEYS = {"on", "at", "shape"}
 _RULE_KEYS = {"id", "when", "then"}
 _WHEN_KEYS = {"rel", "from", "to", "at", "side"}
 _SCALE_RV = ("distance",)
+# `endings` is checked per word for the same reason (spec §4.2.2's interaction
+# table is what the planner actually implements):
+#   * `min_width` is read for every word (`_end_width` looks the word's own spec
+#     up), and `shape` is validated for every word;
+#   * `join` and `miter_limit` configure the corner of a *bent* stroke, read for
+#     BEND_WORDS only — `join` from the ending that names the corner, and
+#     `miter_limit` as the plan-wide limit taken from corner-ul;
+#   * `length`/`width` size the ornament that a hook or heel ending stacks.
+# A word whose keys are not listed here cannot be affected by them, so the
+# loader rejects them rather than accepting a parameter nothing reads. The
+# shipped styles carried `hook: {..., join: round}` from the spec's own §4.2.2
+# example; those are gone, because a hook is one closed triangle with no join to
+# configure.
+_ENDING_COMMON_KEYS = {"min_width", "shape"}
+_CORNER_KEYS = {"join", "miter_limit"}
+_ORNAMENT_KEYS = {"length", "width"}
+_HEEL_WORDS = ("heel-ll", "heel-lr", "heel-ll-old", "heel-ll-new")
+_ORNAMENT_WORDS = ("hook",) + _HEEL_WORDS
 
 
 class StyleError(Exception):
@@ -116,6 +138,27 @@ def _check_keys(d, allowed, where: str) -> None:
                              f"(allowed: {', '.join(sorted(allowed))})")
 
 
+def _ending_keys(word: str) -> set:
+    """The keys `endings.<word>` can actually affect (spec §4.2.2's table)."""
+    keys = set(_ENDING_COMMON_KEYS)
+    if word in BEND_WORDS:
+        keys |= _CORNER_KEYS
+    if word in _ORNAMENT_WORDS:
+        keys |= _ORNAMENT_KEYS
+    return keys
+
+
+def _decoration_keys(kind: str) -> set:
+    """The keys `decorations.<kind>` can actually affect (nib's `_SHAPES`).
+
+    DECORATION_WORDS is closed and checked before this runs, so the
+    `length`/`width` default below is only for totality.
+    """
+    if kind == "wedge":
+        return set(_DECOR_COMMON_KEYS) | {"size"}
+    return set(_DECOR_COMMON_KEYS) | set(_ORNAMENT_KEYS)
+
+
 def _positive(v, where: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)):
         raise StyleError(f"{where}: expected a number, got {v!r}")
@@ -133,7 +176,19 @@ def _nonneg(v, where: str) -> float:
 @dataclass(frozen=True)
 class Decoration:
     """One ornament placed in a stroke end's local frame (spec §4.3.5). All
-    numeric parameters are multiples of the local full width."""
+    numeric parameters are multiples of the local full width.
+
+    Which parameters a kind actually reads is `nib._SHAPES`' business: a wedge
+    is measured by `size`, a hook or heel by `length` and `width`. The loader
+    rejects the other numbers per kind (`_decoration_keys`).
+
+    `join` is a leftover of the first draft: an ornament contour is one closed
+    triangle or quad with no vertex join to configure, so nothing reads it and
+    the schema admits no `join:` on a decoration (nor on a hook/heel ending,
+    which is what used to set it — see `_ending_keys`). The field stays only
+    because deleting it would ripple through every construction site; it is
+    never set from a style file and never read.
+    """
     kind: str
     at: str                                             # head | tail
     length: float = 0.0
@@ -231,7 +286,13 @@ def _read_style_file(path: Path) -> dict:
     try:
         st = path.stat()
         text = path.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
+        # UnicodeDecodeError is a ValueError, not an OSError: a style file with
+        # invalid UTF-8 bytes used to pass through every StyleError handler —
+        # this one, the CLI's `_checked_style` and `main` — and escape as a raw
+        # traceback with exit 1, breaking the module header's "exit 2 for a
+        # style that cannot be used" contract. The message names the file, as
+        # the OSError branch does; the codec error says which byte was bad.
         raise StyleError(f"{path}: cannot read style file: {e}") from None
     return copy.deepcopy(
         _parse_style_file(str(path), st.st_mtime_ns, st.st_size, text))
@@ -332,12 +393,31 @@ class Style:
             if word not in ENDING_WORDS:
                 raise StyleError(f"endings: unknown word {word!r} "
                                  f"(allowed: {', '.join(ENDING_WORDS)})")
-            _check_keys(spec or {}, _ENDING_KEYS, f"endings.{word}")
-            if "join" in (spec or {}) and spec["join"] not in JOIN_WORDS:
+            spec = {} if spec is None else spec
+            _check_mapping(spec, f"endings.{word}")
+            if "join" in spec and word not in BEND_WORDS:
+                # A hook/heel ornament is a single closed contour (nib._hook /
+                # nib._heel), so it has no vertex join to configure; `join` here
+                # would be read by nothing. This is the likeliest copy-paste
+                # anyone makes: the spec's own §4.2.2 example and this repo's
+                # styles/*.yaml used to show `hook: {..., join: round}`.
+                raise StyleError(
+                    f"endings.{word}.join: only the corner words "
+                    f"({', '.join(BEND_WORDS)}) take a join — a '{word}' "
+                    f"ornament is one closed contour with no join to configure")
+            _check_keys(spec, _ending_keys(word), f"endings.{word}")
+            if "join" in spec and spec["join"] not in JOIN_WORDS:
                 raise StyleError(f"endings.{word}.join: unknown join {spec['join']!r} "
                                  f"(allowed: {', '.join(JOIN_WORDS)})")
-            for k in ("length", "width", "size", "min_width", "miter_limit"):
-                if k in (spec or {}):
+            if "shape" in spec and spec["shape"] not in DECORATION_SHAPES:
+                # Nothing reads an ending's `shape` yet: it is validated so that
+                # a typo cannot pass as "nothing wrong" (the decoration `shape`
+                # is checked against the same vocabulary).
+                raise StyleError(f"endings.{word}.shape: unknown shape "
+                                 f"{spec['shape']!r} "
+                                 f"(allowed: {', '.join(DECORATION_SHAPES)})")
+            for k in ("length", "width", "min_width", "miter_limit"):
+                if k in spec:
                     _positive(spec[k], f"endings.{word}.{k}")
         missing = [w for w in ENDING_WORDS if w not in (raw or {})]
         if missing:
@@ -359,7 +439,7 @@ class Style:
             # passed the shape check on an empty mapping and then called `.get`
             # on the original falsy value (`wedge: []` → AttributeError).
             spec = {} if spec is None else spec
-            _check_keys(spec, _DECOR_KEYS, f"decorations.{word}")
+            _check_keys(spec, _decoration_keys(word), f"decorations.{word}")
             if spec.get("on") not in BANDS:
                 raise StyleError(f"decorations.{word}.on: unknown band "
                                  f"{spec.get('on')!r} (allowed: {', '.join(BANDS)})")
@@ -555,11 +635,14 @@ class Style:
         for kind, spec in self.decorations.items():
             if spec.get("on") != node.orientation or spec.get("at") != end:
                 continue
+            # Only the numbers this kind reads arrive here: `_decoration_keys`
+            # rejected the rest at load time, so `size` is a wedge's and
+            # `length`/`width` are a hook's or heel's by construction. `join` is
+            # left at its default (nothing reads it — see Decoration).
             out.append(Decoration(kind=kind, at=end,
                                   length=float(spec.get("length", 0.0)),
                                   size=float(spec.get("size", 0.0)),
-                                  width=float(spec.get("width", 0.0)),
-                                  join=str(spec.get("join", "bevel"))))
+                                  width=float(spec.get("width", 0.0))))
         return out
 
     def _end_width(self, word: str | None, w: float) -> float:
@@ -603,11 +686,13 @@ class Style:
             decos += self._bands_decorations(node, end, word)
             spec = self.endings.get(word or "", {})
             if word is not None and (word == "hook" or word.startswith("heel")):
+                # A hook or heel ending stacks the same ornament its decoration
+                # would; `_ending_keys` admits only the `length`/`width` this
+                # geometry reads, and no `join` at all.
                 decos.append(Decoration(kind=word, at=end,
                                         length=float(spec.get("length", 0.0)),
                                         size=float(spec.get("size", 0.0)),
-                                        width=float(spec.get("width", 0.0)),
-                                        join=str(spec.get("join", "bevel"))))
+                                        width=float(spec.get("width", 0.0))))
         return StrokePlan(centerline=[tuple(p) for p in node.centerline],
                           widths=widths, cap_head=cap_head, cap_tail=cap_tail,
                           joins=joins,

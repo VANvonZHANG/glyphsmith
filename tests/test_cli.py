@@ -385,6 +385,23 @@ def test_render_with_a_style_path(probe, tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["status"] == "ok"
 
 
+def test_render_with_a_non_utf8_style_exits_2(probe, tmp_path, capsys):
+    # F1: a style file with invalid UTF-8 bytes raised UnicodeDecodeError, which
+    # is a ValueError and so passed through `_checked_style`, every handler and
+    # main itself — a full traceback on stderr with exit 1, against the module
+    # header's "an unusable --style is exit 2". Calling main in-process is the
+    # strongest form of this test: a leaking exception errors the test instead
+    # of raising SystemExit(2).
+    path = tmp_path / "bad-utf8.yaml"
+    path.write_bytes(b"name: probe\n# \xff\xfe not utf-8\n")
+    code, payload = _run(["render", "probe", "--corpus", str(probe),
+                          "--backend", "pen", "--style", str(path)])
+    assert code == 2 and payload["status"] == "error"
+    err = payload["data"]["error"]
+    assert str(path) in err, err
+    assert "cannot read style file" in err, err
+
+
 def test_an_empty_style_is_a_usage_error_not_the_default(probe, capsys):
     # T14 review minor (b): `--style ""` used to become serif-song at the pen
     # edge (pen.backend._style_of's `or`), i.e. a typo read as "nothing wrong"

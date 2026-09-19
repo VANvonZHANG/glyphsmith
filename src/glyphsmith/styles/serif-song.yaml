@@ -16,7 +16,7 @@ endings:
   corner-ul: {join: miter, miter_limit: 3.0}
   corner-ur: {join: miter, miter_limit: 3.0}
   join-v: {}
-  hook: {length: 2.5, width: 1.0, join: round}
+  hook: {length: 2.5, width: 1.0}
   heel-ll: {length: 0.1}
   heel-lr: {length: 0.1}
   heel-ll-old: {length: 0.1}

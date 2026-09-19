@@ -94,9 +94,9 @@ class StrokeGraph:
         """Closest other stroke matching `want` on the given `side` of the
         subject's `at` end. Returns (node, distance, end_of_that_node) or None.
 
-        This is the metric query the 钩长 rule needs (spec §4.2.4): `side` is
-        judged from the candidate's bbox relative to the anchor, so a vertical
-        whose bbox lies entirely left of the anchor counts as "left".
+        This is the metric query the hook-length rule needs (spec §4.2.4):
+        `side` is judged from the candidate's bbox relative to the anchor, so a
+        vertical whose bbox lies entirely left of the anchor counts as "left".
         """
         subject = self._by_id[subject_id]
         anchor = _end_point(subject, at)
