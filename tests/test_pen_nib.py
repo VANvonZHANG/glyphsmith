@@ -30,6 +30,15 @@ def test_area_scales_with_width_and_length():
         assert shoelace(c) == pytest.approx(140.0 * w)
 
 
+def test_linear_taper_is_the_trapezoid_area():
+    # Different end widths on a straight stroke make a trapezoid with parallel
+    # sides w0 and w1 and height L: area = L*(w0 + w1)/2, exactly. This is the
+    # one analytic case of layer 1 the docs quote and the tests did not pin.
+    c = body_contour(StrokePlan(centerline=[(20.0, 50.0), (180.0, 50.0)],
+                                widths=[4.0, 9.0]))
+    assert shoelace(c) == pytest.approx(160.0 * (4.0 + 9.0) / 2.0)
+
+
 def test_vertical_and_diagonal_keep_their_area():
     c = body_contour(plan([(50.0, 20.0), (50.0, 120.0)], width=8.0))
     assert shoelace(c) == pytest.approx(800.0)

@@ -52,6 +52,51 @@ def _dump(tmp_path):
     return path
 
 
+# One glyph whose own strokes carry all four relations, plus a pure ref (which
+# has no strokes of its own, so it is in neither `names` nor `glyphs`' counts):
+#   * the horizontal's tail meets the vertical's head end-to-end  -> meets
+#   * the last horizontal's tail lands inside the vertical        -> tee
+#   * the middle horizontal crosses the vertical                  -> crosses
+#   * the first and last horizontals are 10 apart (<= parallel_tol) -> parallel
+GRAPH_SAMPLE = """\
+                                 name                                  | related | data
+------------------------------------------------------------------------+---------+----
+ g                                                                      | -       | 1:0:0:20:50:100:50$1:0:0:100:50:100:190$1:0:0:40:80:120:80$1:0:0:20:60:100:60
+ ref                                                                    | -       | 99:0:0:0:0:200:200:g:0:0:0
+"""
+
+
+def _graph_dump(tmp_path):
+    path = tmp_path / "graph-sample.txt"
+    path.write_text(GRAPH_SAMPLE, encoding="utf-8")
+    return path
+
+
+def test_pen_graph_coverage_counts_relations_per_glyph(tmp_path):
+    """The §9-3 artifact: the relation vocabulary is exercised on real data."""
+    r = _run("pen_graph_coverage.py", "--corpus", str(_graph_dump(tmp_path)),
+             "--offset", "0", "--limit", "4")
+    assert r.returncode == 0, r.stderr
+    assert _field(r.stdout, "names") == 2
+    assert _field(r.stdout, "glyphs") == 1           # the pure ref contributes none
+    for key in ("meets", "tee", "crosses", "parallel"):
+        assert _field(r.stdout, key) == 1, r.stdout
+    assert "coverage: tee, crosses and parallel all occur" in r.stdout
+
+
+def test_pen_graph_coverage_fails_when_a_relation_is_missing(tmp_path):
+    """A slice that misses `tee` is a failed sample, not a passed run."""
+    path = tmp_path / "no-tee.txt"
+    path.write_text('name | related | data\n'
+                    'a    | -       | 1:0:0:20:50:100:50\n'
+                    'b    | -       | 1:0:0:40:50:160:50\n', encoding="utf-8")
+    r = _run("pen_graph_coverage.py", "--corpus", str(path),
+             "--offset", "0", "--limit", "2")
+    assert r.returncode == 1
+    assert "coverage incomplete" in r.stderr and "tee" in r.stderr
+    assert "Traceback" not in r.stderr
+
+
 def test_pen_audit_attributes_degeneracy_per_reason_on_a_limited_sample(tmp_path):
     r = _run("pen_audit.py", "--corpus", str(_dump(tmp_path)),
              "--style", "serif-song", "--limit", "4")
