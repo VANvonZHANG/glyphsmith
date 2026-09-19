@@ -119,3 +119,23 @@ def _flatten_cubic(p0, c0, c1, p1, out=None, depth=0):
     _flatten_cubic(p0, a, d, m, out, depth + 1)
     _flatten_cubic(m, e, c, p1, out, depth + 1)
     return out
+
+
+# The five band *names* classify_orientation can return, in canonical order.
+# The wrap-around sectors live in classify_orientation itself, so the names are
+# all a style file needs to key its width profile on.
+BANDS = tuple(sorted({name for _lo, _hi, name in SECTORS}))
+
+
+def vertex_ts(pts) -> list[float]:
+    """Arc-length-normalised parameter per vertex, in [0, 1] (spec §4.2.2: the
+    width profile is keyed on t, so a long and a short stroke share one recipe)."""
+    if len(pts) < 2:
+        return [0.0] * len(pts)
+    cum, total = [0.0], 0.0
+    for i in range(len(pts) - 1):
+        total += math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+        cum.append(total)
+    if total <= 0.0:
+        return [0.0] * len(pts)
+    return [c / total for c in cum]

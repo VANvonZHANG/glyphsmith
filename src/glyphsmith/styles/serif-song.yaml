@@ -1,0 +1,29 @@
+# src/glyphsmith/styles/serif-song.yaml — the minimal validatable recipe: T9
+# expands the semantics, T7 only has to prove the file passes validation.
+name: serif-song
+genre: serif
+endings_source: data
+width_profile:
+  horizontal:    [[0.0, 4.0], [1.0, 4.5]]
+  vertical:      [[0.0, 12.0], [1.0, 11.0]]
+  left-falling:  [[0.0, 9.0], [0.35, 6.0], [1.0, 0.8]]
+  right-falling: [[0.0, 5.0], [0.6, 10.0], [1.0, 1.0]]
+  rising:        [[0.0, 7.0], [1.0, 0.8]]
+endings:
+  flat: {}
+  join-h: {}
+  tip: {min_width: 0.15}
+  corner-ul: {join: miter, miter_limit: 3.0}
+  corner-ur: {join: miter, miter_limit: 3.0}
+  join-v: {}
+  hook: {length: 2.5, width: 1.0, join: round}
+  heel-ll: {length: 0.1}
+  heel-lr: {length: 0.1}
+  heel-ll-old: {length: 0.1}
+  heel-ll-new: {length: 0.1}
+  cap-t: {}
+decorations:
+  wedge: {on: horizontal, at: tail, shape: triangle, size: 3.0}
+caps: {default: butt}
+joins: {default: miter, bend: round}
+rules: []

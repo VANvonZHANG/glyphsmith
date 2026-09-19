@@ -116,3 +116,11 @@ def test_degenerate_centerlines_default_to_horizontal():
     assert classify_orientation([]) == "horizontal"
     assert classify_orientation([(5.0, 5.0)]) == "horizontal"
     assert classify_orientation([(5.0, 5.0), (5.0, 5.0)]) == "horizontal"
+
+
+def test_vertex_ts_is_arc_length_normalised():
+    from glyphsmith.pen.centerline import BANDS, vertex_ts
+    assert vertex_ts([(0.0, 0.0), (30.0, 0.0), (100.0, 0.0)]) == [0.0, 0.3, 1.0]
+    assert vertex_ts([(5.0, 5.0), (5.0, 5.0)]) == [0.0, 0.0]
+    assert len(BANDS) == 5 and set(BANDS) == {"horizontal", "vertical",
+                                              "left-falling", "right-falling", "rising"}
