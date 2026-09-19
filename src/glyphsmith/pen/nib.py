@@ -34,6 +34,9 @@ class StrokePlan:
     # Why this stroke could not be stroked normally (spec §4.3.4); should_degrade
     # records its reasons here instead of dropping geometry silently.
     warnings: list[str] = field(default_factory=list)
+    # The graph node this plan came from: `Style.apply_rules` walks graph.nodes
+    # by plan, so the plan has to carry the id back to the relational layer.
+    stroke_id: int = -1
 
     def __post_init__(self) -> None:
         # One full width per centerline vertex is the nib's indexing contract.

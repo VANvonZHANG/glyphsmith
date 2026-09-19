@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 from pathlib import Path
 
 import yaml
@@ -145,6 +146,21 @@ def profile_at(profile, t: float) -> float:
         if t0 <= t <= t1:
             return w1 if t1 == t0 else w0 + (w1 - w0) * (t - t0) / (t1 - t0)
     return profile[-1][1]
+
+
+def ladder(value: float, steps) -> float:
+    """Piecewise-constant lookup (spec §4.2.4).
+
+    Legacy's adjustHane is literally `7 - floor(mn / 15)` — a 15-unit ladder,
+    not an interpolation — so the declarative form is a step table, not a spline.
+    Entries are read in order; the last `d <= value` wins.
+    """
+    factor = steps[0][1]
+    for d, f in steps:
+        if value < d:
+            break
+        factor = f
+    return factor
 
 
 class Style:
@@ -481,10 +497,94 @@ class Style:
                           joins=joins,
                           miter_limit=float(self.endings.get("corner-ul", {})
                                             .get("miter_limit", 3.0)),
-                          decorations=decos, warnings=warnings)
+                          decorations=decos, warnings=warnings,
+                          stroke_id=node.id)
+
+    # ── rules ──────────────────────────────────────────────────────────────
+    @staticmethod
+    def _subject_end(node, word) -> str:
+        """Which end of the subject the rule's `from` filter refers to."""
+        if getattr(node, "head", None) == word:
+            return "head"
+        if getattr(node, "tail", None) == word:
+            return "tail"
+        return "tail"                       # orientation filter: the tail is the
+                                            # end decorations usually hang off
+
+    @staticmethod
+    def _matches(node, word) -> bool:
+        return node.orientation == word or node.head == word or node.tail == word
+
+    def _candidates(self, graph, node, when) -> list:
+        """(subject_end, other_node, distance) tuples satisfying `when`."""
+        rel = when["rel"]
+        if rel == "near":
+            end = when.get("at") or self._subject_end(node, when.get("from"))
+            hit = graph.nearest(node.id, at=end, want=when.get("to"),
+                                side=when.get("side"))
+            if hit is None:
+                return []
+            other, dist, _other_end = hit
+            return [(end, other, dist)]
+        out = []
+        for e in graph.edges:
+            if e.a_id == node.id:
+                end, other = e.a_end, graph.node(e.b_id)
+            elif e.b_id == node.id:
+                end, other = e.b_end, graph.node(e.a_id)
+            else:
+                continue
+            if e.kind != rel:
+                continue
+            if when.get("at") and end != when["at"]:
+                continue
+            if when.get("from") and not self._matches(node, when["from"]):
+                continue
+            if when.get("to") and not self._matches(other, when["to"]):
+                continue
+            out.append((end, other, e.distance))
+        return out
+
+    def apply_rules(self, graph, plans) -> None:
+        """Evaluate every rule against every plan, in file order (spec §4.2.4).
+
+        `suppress` removes the decoration outright; `scale` multiplies, so two
+        matching rules compound. Both are deterministic and explainable — that
+        is the whole point of keeping the action vocabulary this small.
+        """
+        for plan in plans.values():
+            node = graph.node(plan.stroke_id)
+            for rule in self.rules:
+                when, then = rule["when"], rule["then"]
+                hits = self._candidates(graph, node, when)
+                if not hits:
+                    continue
+                if "suppress" in then:
+                    plan.decorations = [d for d in plan.decorations
+                                        if d.kind != then["suppress"]]
+                elif "replace" in then:
+                    old, new = next(iter(then["replace"].items()))
+                    plan.decorations = [
+                        _dc_replace(d, kind=new) if d.kind == old else d
+                        for d in plan.decorations]
+                else:
+                    for word, params in then["scale"].items():
+                        for i, d in enumerate(plan.decorations):
+                            if d.kind != word:
+                                continue
+                            dist = min(h[2] for h in hits)
+                            upd = {}
+                            for pname, pv in params.items():
+                                cur = getattr(d, pname, 0.0)
+                                factor = (ladder(dist, pv["steps"])
+                                          if isinstance(pv, dict) else float(pv))
+                                upd[pname] = cur * factor
+                            plan.decorations[i] = _dc_replace(d, **upd)
 
     def apply(self, graph) -> dict:
-        return {n.id: self.plan_for(n) for n in graph.nodes}
+        plans = {n.id: self.plan_for(n) for n in graph.nodes}
+        self.apply_rules(graph, plans)
+        return plans
 
 
 _DECORATION_WORDS_SET = set(DECORATION_WORDS)
