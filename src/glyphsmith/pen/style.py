@@ -45,6 +45,12 @@ _TOP_KEYS = {"name", "genre", "endings_source", "width_profile", "endings",
              "decorations", "caps", "joins", "rules"}
 _ENDING_KEYS = {"length", "width", "size", "shape", "min_width", "join",
                 "miter_limit"}
+# `then.scale` multiplies a number that is already on a Decoration, so its
+# params are exactly the numeric Decoration fields — a strict subset of
+# _ENDING_KEYS. `shape`/`join` are not numbers and `min_width`/`miter_limit`
+# belong to an ending's planning, not to an ornament: accepting them here used
+# to defer the failure to a TypeError inside `apply`.
+_SCALE_KEYS = {"length", "size", "width"}
 _DECOR_KEYS = {"on", "at", "shape", "size", "length", "width"}
 _RULE_KEYS = {"id", "when", "then"}
 _WHEN_KEYS = {"rel", "from", "to", "at", "side"}
@@ -327,6 +333,14 @@ class Style:
             if when.get("at") not in (None, "head", "tail", "mid"):
                 raise StyleError(f"{where}.when.at: unknown end {when['at']!r} "
                                  f"(allowed: head, tail, mid)")
+            if when.get("rel") == "near" and when.get("at") == "mid":
+                # `graph.nearest` anchors at a stroke *end*: `_end_point` maps
+                # anything that is not "head" to the tail, so `mid` would read
+                # as `tail` while claiming otherwise. Reject rather than alias.
+                raise StyleError(f"{where}.when.at: 'mid' cannot be used with "
+                                 f"rel 'near' (the nearest query anchors at a "
+                                 f"stroke end, and a 'mid' anchor would silently "
+                                 f"be the tail)")
             if when.get("side") not in (None,) + SIDES:
                 raise StyleError(f"{where}.when.side: unknown side {when['side']!r} "
                                  f"(allowed: {', '.join(SIDES)})")
@@ -345,11 +359,24 @@ class Style:
                 _check_mapping(then[kind], f"{where}.then.scale")
                 for word, params in then[kind].items():
                     Style._check_decoration_word(word, f"{where}.then.scale")
-                    _check_keys(params, _ENDING_KEYS, f"{where}.then.scale.{word}")
+                    _check_keys(params, _SCALE_KEYS, f"{where}.then.scale.{word}")
                     for pname, pv in params.items():
                         if isinstance(pv, dict):
                             _check_keys(pv, {"by", "steps", "clamp"},
                                         f"{where}.then.scale.{word}.{pname}")
+                            if pv.get("clamp", True) is not True:
+                                # `ladder` clamps by construction: the first
+                                # entry's factor applies below it and the last
+                                # above it, so there is no unclamped mode to
+                                # switch off. `clamp: true` stays legal as
+                                # documentation; anything else is rejected or
+                                # the author would believe it did something.
+                                raise StyleError(
+                                    f"{where}.then.scale.{word}.{pname}.clamp: "
+                                    f"the ladder always clamps (its first entry "
+                                    f"applies below and its last above), so "
+                                    f"clamp: false is not representable; write "
+                                    f"clamp: true or omit the key")
                             if pv.get("by") not in _SCALE_RV:
                                 raise StyleError(
                                     f"{where}.then.scale.{word}.{pname}.by: "
@@ -519,12 +546,23 @@ class Style:
         """(subject_end, other_node, distance) tuples satisfying `when`."""
         rel = when["rel"]
         if rel == "near":
+            # Both filters are stated conditions, so both must be the conditions
+            # that run. `from` names the anchor end *and* filters the subject;
+            # `to` filters the hit. `graph.nearest(want=...)` compares against
+            # the orientation band only, so a `to` naming a GSF ending word
+            # (which `_check_rules` accepts) would filter every node out and the
+            # rule would be silently dead — and a `from` band would never be
+            # tested against the subject at all. Ask for the unfiltered nearest
+            # and apply `_matches` here, as the edge branch does.
+            if when.get("from") and not self._matches(node, when["from"]):
+                return []
             end = when.get("at") or self._subject_end(node, when.get("from"))
-            hit = graph.nearest(node.id, at=end, want=when.get("to"),
-                                side=when.get("side"))
+            hit = graph.nearest(node.id, at=end, side=when.get("side"))
             if hit is None:
                 return []
             other, dist, _other_end = hit
+            if when.get("to") and not self._matches(other, when["to"]):
+                return []
             return [(end, other, dist)]
         out = []
         for e in graph.edges:

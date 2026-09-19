@@ -86,11 +86,80 @@ def test_ending_words_are_the_gsf_union_of_twelve():
     (lambda t: t.replace("rules: []",
                          "rules: [{when: {rel: meets}, then: {scale: 2.0}}]"),
      "then.scale: expected a mapping"),
+    # `scale` multiplies a number that is already on a Decoration, so its params
+    # are exactly the numeric Decoration fields. The ending vocabulary is wider:
+    # `shape`/`min_width`/`miter_limit` used to reach `_dc_replace(d, **upd)` and
+    # escaped as `TypeError: Decoration.__init__() got an unexpected keyword
+    # argument`, and `join: 0.5` as "can't multiply sequence by non-int".
+    (lambda t: t.replace("rules: []",
+                         "rules: [{when: {rel: meets}, then: {scale: {hook: {shape: 1.0}}}}]"),
+     "shape"),
+    (lambda t: t.replace("rules: []",
+                         "rules: [{when: {rel: meets}, then: {scale: {hook: {min_width: 0.5}}}}]"),
+     "min_width"),
+    (lambda t: t.replace("rules: []",
+                         "rules: [{when: {rel: meets}, then: {scale: {hook: {miter_limit: 3.0}}}}]"),
+     "miter_limit"),
+    (lambda t: t.replace("rules: []",
+                         "rules: [{when: {rel: meets}, then: {scale: {hook: {join: 0.5}}}}]"),
+     "join"),
 ])
 def test_validation_is_loud(tmp_path, mutate, needle):
     with pytest.raises(StyleError) as e:
         Style.load(write(tmp_path, mutate(GOOD)))
     assert needle in str(e.value), f"message must name the offending key: {e.value}"
+
+
+def test_scale_accepts_every_numeric_decoration_field(tmp_path):
+    # The three params a scale can act on, in both the scalar and the ladder
+    # form; anything else is rejected above.
+    for field, value in (("length", "0.5"),
+                         ("size", "{by: distance, steps: [[0, 0.5]]}"),
+                         ("width", "0.5")):
+        text = GOOD.replace(
+            "rules: []",
+            "rules: [{when: {rel: meets}, then: {scale: {hook: {"
+            + field + ": " + value + "}}}}]")
+        s = Style.load(write(tmp_path, text))
+        assert field in s.rules[0]["then"]["scale"]["hook"]
+
+
+def test_clamp_false_is_rejected_because_the_ladder_always_clamps(tmp_path):
+    # `ladder` clamps by construction (its first entry's factor applies below it
+    # and its last above), so `clamp: false` is unrepresentable; accepting it
+    # would let the author believe it did something.
+    text = GOOD.replace(
+        "rules: []",
+        "rules: [{when: {rel: meets}, then: {scale: {hook: "
+        "{length: {by: distance, steps: [[0, 0.5]], clamp: false}}}}}]")
+    with pytest.raises(StyleError) as e:
+        Style.load(write(tmp_path, text))
+    assert "clamp" in str(e.value) and "always clamps" in str(e.value)
+
+    # `clamp: true` stays legal, as documentation of what already happens.
+    ok = GOOD.replace(
+        "rules: []",
+        "rules: [{when: {rel: meets}, then: {scale: {hook: "
+        "{length: {by: distance, steps: [[0, 0.5]], clamp: true}}}}}]")
+    s = Style.load(write(tmp_path, ok))
+    assert s.rules[0]["then"]["scale"]["hook"]["length"]["clamp"] is True
+
+
+def test_at_mid_is_rejected_under_rel_near(tmp_path):
+    # `graph.nearest` anchors at an end: `_end_point` maps anything that is not
+    # "head" to the tail, so `at: mid` under `rel: near` would silently be the
+    # tail. It is a schema-valid value for every other relation.
+    text = GOOD.replace(
+        "rules: []",
+        "rules: [{when: {rel: near, from: hook, at: mid}, then: {suppress: hook}}]")
+    with pytest.raises(StyleError) as e:
+        Style.load(write(tmp_path, text))
+    assert "mid" in str(e.value) and "near" in str(e.value)
+
+    ok = GOOD.replace(
+        "rules: []",
+        "rules: [{when: {rel: meets, at: mid}, then: {suppress: hook}}]")
+    Style.load(write(tmp_path, ok))
 
 
 def test_malformed_yaml_reports_the_file(tmp_path):
