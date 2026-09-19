@@ -120,16 +120,50 @@ def walk_side(pts, dirs, half, sign, joins, miter_limit):
     return out
 
 
+def _arc_points(center, r, p_from, p_to, through):
+    """Flattened circular arc from p_from to p_to around `center`, in the sweep
+    direction that passes through the direction of `through`. Both endpoints are
+    excluded (the caller already has them).
+
+    The chord count comes from the sagitta bound: a chord subtending `step`
+    dips r*(1-cos(step/2)) below the arc, so requiring that to be <= ARC_TOL
+    gives step = 2*acos(1 - ARC_TOL/r).
+    """
+    if r <= 0.0:
+        return []
+    a0 = math.atan2(p_from[1] - center[1], p_from[0] - center[0])
+    a1 = math.atan2(p_to[1] - center[1], p_to[0] - center[0])
+    at = math.atan2(through[1] - center[1], through[0] - center[0])
+    two_pi = 2.0 * math.pi
+    sweep = (a1 - a0) % two_pi
+    if ((at - a0) % two_pi) > sweep:
+        sweep -= two_pi                  # go the other way round
+    if abs(sweep) < 1e-12:
+        return []
+    step = math.pi / 2.0 if ARC_TOL >= r else 2.0 * math.acos(1.0 - ARC_TOL / r)
+    k = max(2, math.ceil(abs(sweep) / step))
+    return [(center[0] + r * math.cos(a0 + sweep * i / k),
+             center[1] + r * math.sin(a0 + sweep * i / k)) for i in range(1, k)]
+
+
 def _cap_points(p_end, out_dir, half, style, start, stop):
     """Cap interior points walking from `start` to `stop` (both excluded).
 
-    T4 adds square and round: until then any unimplemented style raises rather
-    than silently degrading to a butt cap.
+    `out_dir` points away from the stroke: the head cap is called with -dirs[0]
+    and the tail cap with +dirs[-1] (body_contour does that). `start` and `stop`
+    are the cap's actual neighbours on the contour: the offset endpoints at that
+    end of the stroke.
     """
-    if style != "butt":
-        raise NotImplementedError(
-            f"cap style {style!r} is not implemented yet (T4 adds square and round)")
-    return []
+    if style not in ("butt", "square", "round"):
+        raise ValueError(
+            f"unknown cap style {style!r} (allowed: butt, square, round)")
+    if style == "butt" or half <= 0.0:
+        return []
+    if style == "square":
+        return [(start[0] + out_dir[0] * half, start[1] + out_dir[1] * half),
+                (stop[0] + out_dir[0] * half, stop[1] + out_dir[1] * half)]
+    through = (p_end[0] + out_dir[0] * half, p_end[1] + out_dir[1] * half)
+    return _arc_points(p_end, half, start, stop, through)
 
 
 def body_contour(plan: PenPlan) -> list[tuple[float, float]]:
@@ -140,7 +174,11 @@ def body_contour(plan: PenPlan) -> list[tuple[float, float]]:
     joins = list(plan.joins) + [""] * max(0, len(pts) - 2 - len(plan.joins))
     right = walk_side(pts, dirs, half, -1.0, joins, plan.miter_limit)
     left = walk_side(pts, dirs, half, +1.0, joins, plan.miter_limit)
-    head = _cap_points(pts[0], dirs[0], half[0], plan.cap_head, right[-1], left[0])
-    tail = _cap_points(pts[-1], dirs[-1], half[-1], plan.cap_tail, left[-1], right[0])
+    # The contour reads reversed(right) + head + left + tail, so the head cap
+    # bridges right[0] to left[0] and the tail cap bridges left[-1] to right[-1].
+    head = _cap_points(pts[0], (-dirs[0][0], -dirs[0][1]), half[0],
+                       plan.cap_head, right[0], left[0])
+    tail = _cap_points(pts[-1], dirs[-1], half[-1],
+                       plan.cap_tail, left[-1], right[-1])
     contour = list(reversed(right)) + head + left + tail
     return contour if shoelace(contour) > 0 else list(reversed(contour))
