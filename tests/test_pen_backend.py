@@ -85,9 +85,18 @@ def test_graph_command_reports_an_unknown_style(tmp_path, capsys):
     assert "nope" in json.loads(capsys.readouterr().out)["data"]["error"]
 
 
-def test_pen_backend_is_registered():
-    from glyphsmith.protocol import Backend
-    assert "pen" in Backend.available()
+def test_pen_backend_registers_on_a_cold_library_import():
+    # A subprocess: this module already imports the pen package at module scope,
+    # so an in-process assertion could never fail. Cold `import glyphsmith` is
+    # what a library user does, and it must register every shipped backend.
+    import subprocess
+    import sys
+    code = ("import glyphsmith; from glyphsmith.protocol import Backend; "
+            "assert 'pen' in Backend.available(), Backend.available(); "
+            "print('ok')")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "ok"
 
 
 def test_pen_renders_a_horizontal():

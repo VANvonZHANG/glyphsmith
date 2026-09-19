@@ -14,7 +14,7 @@ from glyphsmith.legacy_kurgm.font.transform import df_transform
 from glyphsmith.outline import Outline
 from glyphsmith.pen import graph as graph_mod
 from glyphsmith.pen import nib, style as style_mod
-from glyphsmith.protocol import Backend
+from glyphsmith.protocol import Backend, RenderOptions
 
 
 def expand_to_graph(result, style_name: str):
@@ -58,7 +58,12 @@ def plan_to_dict(plan) -> dict:
 
 
 def render_stream(result, style_name: str):
-    """-> (Outline, list[Outline] per stroke, warnings)."""
+    """-> (Outline, list[Outline] per stroke, warnings).
+
+    Per-stroke outlines are captured *as drawn*: for a glyph with a mid-stream
+    TransformOp they hold pre-transform geometry, while `render`'s composite is
+    post-transform (df_transform mutates only the accumulated outline).
+    """
     _g, plans, items, warnings, _counts = expand_to_graph(result, style_name)
     outline, per_stroke, idx = Outline(), [], 0
     for it in items:
@@ -95,8 +100,9 @@ class PenBackend(Backend):
 
 
 def _style_of(opts) -> str:
-    style = getattr(opts, "style", None)
-    return style or "serif-song"
+    # The fallback is RenderOptions().style, not a second "serif-song" literal:
+    # one source of truth, so the dataclass default and this fallback cannot diverge.
+    return getattr(opts, "style", None) or RenderOptions().style
 
 
 Backend.register(PenBackend)

@@ -5,6 +5,10 @@ import glyphsmith.legacy_kurgm  # noqa: F401  register legacy-kurgm (the default
 # cold library import `import glyphsmith; Renderer()` raised ValueError.
 import glyphsmith.pen_minimal  # noqa: F401  register the pen-minimal backend
 # T8 review lesson: without this import, get_backend raises ValueError.
+import glyphsmith.pen  # noqa: F401  register the pen backend
+# T14 review finding: the same cold-import rule applies to every shipped backend -
+# without this import, `Renderer(backend="pen")` raised ValueError unless the
+# caller imported glyphsmith.pen first.
 from glyphsmith.compare import compare
 from glyphsmith.corpus import Corpus
 from glyphsmith.protocol import RenderOptions, Renderer
