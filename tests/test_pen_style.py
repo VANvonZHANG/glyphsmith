@@ -1,4 +1,6 @@
 # tests/test_pen_style.py
+import re
+
 import pytest
 
 from glyphsmith.pen.style import ENDING_WORDS, Style, StyleError
@@ -74,6 +76,16 @@ def test_ending_words_are_the_gsf_union_of_twelve():
     (lambda t: t.replace("rules: []", "rules: [{when: {rel: meets}, then: {explode: 1}}]"), "explode"),
     (lambda t: t.replace("rules: []", "rules: [{when: {rel: hugs}, then: {suppress: wedge}}]"), "hugs"),
     (lambda t: t.replace("rules: []", "rules: [{when: {rel: meets}, then: {suppress: sparkle}}]"), "sparkle"),
+    # A scalar where the twelve-word table belongs. The block is cut along with
+    # the key, or the leftover indented lines are a YAML syntax error and the
+    # mapping check is never reached.
+    (lambda t: re.sub(r"(?m)^endings:\n(?:  \S.*\n)*", "endings: 5\n", t),
+     "endings: expected a mapping"),
+    # `scale` takes a per-word table, not a factor: a number here would reach
+    # `.items()` and escape as an AttributeError naming nothing.
+    (lambda t: t.replace("rules: []",
+                         "rules: [{when: {rel: meets}, then: {scale: 2.0}}]"),
+     "then.scale: expected a mapping"),
 ])
 def test_validation_is_loud(tmp_path, mutate, needle):
     with pytest.raises(StyleError) as e:

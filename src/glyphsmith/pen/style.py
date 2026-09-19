@@ -87,9 +87,14 @@ def resolve_genre(word: str) -> str:
                      f"aliases: {', '.join(sorted(GENRE_ALIASES))})")
 
 
-def _check_keys(d, allowed, where: str) -> None:
+def _check_mapping(d, where: str) -> None:
+    """Shape check on its own, for keys whose contents are checked separately."""
     if not isinstance(d, dict):
         raise StyleError(f"{where}: expected a mapping, got {type(d).__name__}")
+
+
+def _check_keys(d, allowed, where: str) -> None:
+    _check_mapping(d, where)
     for k in d:
         if k not in allowed:
             raise StyleError(f"{where}: unknown key {k!r} "
@@ -198,6 +203,10 @@ class Style:
         # Unknown words are reported BEFORE missing ones: a typo (`hookk`) should
         # read as a typo, not as "missing hook" — the two are the same data bug
         # but only one message tells the author what to fix.
+        # `None` (an absent or empty `endings:`) is not a shape error: it falls
+        # through to the missing-words check, which names all twelve words.
+        if raw is not None:
+            _check_mapping(raw, "endings")
         for word, spec in (raw or {}).items():
             if word not in ENDING_WORDS:
                 raise StyleError(f"endings: unknown word {word!r} "
@@ -285,6 +294,7 @@ class Style:
                 for k, v in then[kind].items():
                     Style._check_decoration_word(v, f"{where}.then.replace.{k}")
             else:
+                _check_mapping(then[kind], f"{where}.then.scale")
                 for word, params in then[kind].items():
                     Style._check_decoration_word(word, f"{where}.then.scale")
                     _check_keys(params, _ENDING_KEYS, f"{where}.then.scale.{word}")
