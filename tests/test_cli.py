@@ -306,3 +306,16 @@ def test_corpus_path_is_directory_exit2_json(tmp_path):
     # a raw traceback
     code, payload = _run(["render", "g", "--corpus", str(tmp_path)])
     assert code == 2 and payload["status"] == "error"
+
+
+def test_styles_command_lists_the_builtins(capsys, monkeypatch):
+    from glyphsmith.cli import main
+    monkeypatch.setattr("sys.argv", ["glyphsmith", "styles"])
+    with pytest.raises(SystemExit) as e:
+        main(["styles"])
+    assert e.value.code == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "ok"
+    names = [s["name"] for s in out["data"]["styles"]]
+    assert names == ["sans-hei", "sans-round", "serif-song"]
+    assert all(s["genre"] in ("serif", "sans", "round") for s in out["data"]["styles"])

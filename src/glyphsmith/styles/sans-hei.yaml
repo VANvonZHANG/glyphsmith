@@ -1,0 +1,28 @@
+# Deliberately a near-duplicate of its pair (name/caps/joins only):
+# tests/test_pen_style.py asserts the diff, so do not DRY with YAML anchors.
+name: sans-hei
+genre: sans
+endings_source: data
+width_profile:                # hei-ti is uniform: legacy k_width = 5.0 (half)
+  horizontal:    [[0.0, 10.0], [1.0, 10.0]]
+  vertical:      [[0.0, 10.0], [1.0, 10.0]]
+  left-falling:  [[0.0, 10.0], [1.0, 10.0]]
+  right-falling: [[0.0, 10.0], [1.0, 10.0]]
+  rising:        [[0.0, 10.0], [1.0, 10.0]]
+endings:                      # hei-ti has a hook, it is just squarer — same kind,
+  flat: {}                    # different parameters (spec §4.2.6)
+  join-h: {}
+  tip: {min_width: 0.1}
+  corner-ul: {join: miter, miter_limit: 4.0}
+  corner-ur: {join: miter, miter_limit: 4.0}
+  join-v: {}
+  hook: {length: 2.5, width: 1.0, join: miter}
+  heel-ll: {length: 0.1}
+  heel-lr: {length: 0.1}
+  heel-ll-old: {length: 0.1}
+  heel-ll-new: {length: 0.1}
+  cap-t: {}
+decorations: {}               # no うろこ
+caps: {default: butt}
+joins: {default: miter}
+rules: []

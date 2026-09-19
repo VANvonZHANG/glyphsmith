@@ -120,3 +120,44 @@ def test_genre_aliases_resolve():
     assert resolve_genre("serif") == "serif"
     with pytest.raises(StyleError):
         resolve_genre("comic")
+
+
+def test_all_three_styles_load():
+    from glyphsmith.pen.style import available
+    assert available() == ["sans-hei", "sans-round", "serif-song"]
+    for name in available():
+        s = Style.load(name)
+        assert s.name == name
+        assert set(s.width_profile) == {"horizontal", "vertical", "left-falling",
+                                        "right-falling", "rising"}
+        assert set(s.endings) == set(ENDING_WORDS)
+
+
+def test_hei_and_round_differ_in_exactly_two_lines():
+    # The whole point of the redesign: 宋/黑/圆 used to be three code tables
+    # (kagecd.js / kagedf.js / a third copy in HowardZorn). Here hei -> round is
+    # a two-line diff, and nothing else.
+    # NOTE FOR REVIEWERS: the near-duplication of these two YAML files is
+    # deliberate and is precisely what this test asserts. Do not "DRY" them with
+    # YAML anchors — that would destroy the evidence. (Controller ruling,
+    # 2026-09-19.)
+    base = Style.builtin_dir()
+    a = (base / "sans-hei.yaml").read_text(encoding="utf-8").splitlines()
+    b = (base / "sans-round.yaml").read_text(encoding="utf-8").splitlines()
+    assert len(a) == len(b), "the two files must stay line-for-line comparable"
+    diff = [x.split(":")[0] for x, y in zip(a, b) if x != y]
+    assert diff == ["name", "caps", "joins"], diff
+
+
+def test_hei_is_uniform_width_and_ignores_the_wedge():
+    s = Style.load("sans-hei")
+    assert {tuple(map(tuple, v)) for v in s.width_profile.values()} == {((0.0, 10.0), (1.0, 10.0))}
+    assert s.decorations == {}, "hei-ti has no うろこ"
+    assert s.endings["hook"]["join"] == "miter"
+
+
+def test_round_differs_from_hei_only_in_caps_and_joins():
+    hei, rnd = Style.load("sans-hei"), Style.load("sans-round")
+    assert hei.width_profile == rnd.width_profile
+    assert hei.endings == rnd.endings
+    assert rnd.caps["default"] == "round" and rnd.joins["default"] == "round"

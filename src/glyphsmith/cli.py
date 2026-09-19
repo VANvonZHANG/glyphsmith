@@ -91,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--dump", action="store_true",
                    help="corpus is a GlyphWiki dump_newest_only.txt"
                         " (otherwise auto-detected: first line contains '|' and is not a gsf/ header)")
+    sp("styles", "list built-in pen styles (name / genre / path)")
     return p
 
 
@@ -273,9 +274,25 @@ def _cmd_compare(args, corpus):
     return result.to_dict(), warns
 
 
+def _cmd_styles(_args, _corpus=None):
+    # unlike the corpus commands this reads only the style files on disk: the
+    # three recipes are one pen model, so listing them must work before any
+    # corpus exists (hence _NO_CORPUS).
+    from glyphsmith.pen.style import Style
+    rows = []
+    for name in Style.available():
+        s = Style.load(name)
+        rows.append({"name": s.name, "genre": s.genre, "path": str(s.path),
+                     "description": f"{s.genre} style with "
+                                    f"{len(s.decorations)} decoration(s) and "
+                                    f"{len(s.rules)} rule(s)"})
+    return {"styles": rows}, []
+
+
 _HANDLERS = {"render": _cmd_render, "resolve": _cmd_resolve,
              "inspect": _cmd_inspect, "list": _cmd_list,
-             "sample": _cmd_sample, "compare": _cmd_compare}
+             "sample": _cmd_sample, "compare": _cmd_compare,
+             "styles": _cmd_styles}
 
 
 def _looks_like_dump(path: str) -> bool:
@@ -314,16 +331,29 @@ def _cmd_batch(args, _corpus=None):
     return {**stats, "outdir": args.out}, []
 
 
+# registered here, not in the literal above: _cmd_batch is defined below it.
+# main() dispatches every _NO_CORPUS command through this table, so batch must
+# be in it (it used to be a special case in main).
+_HANDLERS["batch"] = _cmd_batch
+
+
+# Commands that must not have a corpus built before dispatch. batch loads its own
+# (dump auto-detection, and reading the 317MB dump twice would be wasteful);
+# styles only lists the style files under src/glyphsmith/styles/. The default
+# --corpus is glyphwiki-newest.gsf, which need not exist for either.
+_NO_CORPUS = {"batch", "styles"}
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     from glyphsmith.corpus import Corpus, UnknownGlyphError
     from glyphsmith.legacy_kurgm.expansion import CycleError
 
     try:
-        if args.cmd == "batch":        # batch loads its own corpus (see _cmd_batch)
-            data, warnings = _cmd_batch(args)
+        if args.cmd in _NO_CORPUS:     # these commands do not need a corpus
+            data, warnings = _HANDLERS[args.cmd](args)
         else:
-            # final review C1: non-batch commands also route dump corpora
+            # final review C1: the corpus commands route dump corpora
             # automatically (batch did this in T16; previously a dump path was
             # silently loaded by from_gsf as an empty corpus → a misleading
             # exit 3 on the first glyph)
