@@ -294,9 +294,12 @@ def test_genre_aliases_resolve():
         resolve_genre("comic")
 
 
-def test_all_three_styles_load():
+def test_all_builtin_styles_load():
     from glyphsmith.pen.style import available
-    assert available() == ["sans-hei", "sans-round", "serif-song"]
+    # pen-minimal-probe is the equivalence probe (spec §6 layer 2): a test
+    # fixture that ships with the package, not a fourth typeface. It is still a
+    # builtin file, so `available()` lists it and it must load like the others.
+    assert available() == ["pen-minimal-probe", "sans-hei", "sans-round", "serif-song"]
     for name in available():
         s = Style.load(name)
         assert s.name == name

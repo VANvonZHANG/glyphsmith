@@ -1,0 +1,33 @@
+# src/glyphsmith/styles/pen-minimal-probe.yaml
+# The equivalence probe (spec §6 layer 2): a style that reproduces exactly what
+# pen-minimal draws — uniform width, butt caps, bevel joins (pen-minimal tiles
+# one quad per segment, so it never miters or rounds a corner), and the data's
+# endings ignored. NOT a typeface: it exists so the new nib has an independently
+# verified oracle. The width has to stay pen_minimal.WIDTH; the equivalence
+# test asserts that, so a drift is a failing test rather than a silent one.
+name: pen-minimal-probe
+genre: sans
+endings_source: style          # ignore head/tail words entirely
+width_profile:
+  horizontal:    [[0.0, 8.0], [1.0, 8.0]]
+  vertical:      [[0.0, 8.0], [1.0, 8.0]]
+  left-falling:  [[0.0, 8.0], [1.0, 8.0]]
+  right-falling: [[0.0, 8.0], [1.0, 8.0]]
+  rising:        [[0.0, 8.0], [1.0, 8.0]]
+endings:                       # all inert: endings_source is `style`
+  flat: {}
+  join-h: {}
+  tip: {}
+  corner-ul: {}
+  corner-ur: {}
+  join-v: {}
+  hook: {}
+  heel-ll: {}
+  heel-lr: {}
+  heel-ll-old: {}
+  heel-ll-new: {}
+  cap-t: {}
+decorations: {}
+caps: {default: butt}
+joins: {default: bevel}
+rules: []

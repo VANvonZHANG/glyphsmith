@@ -321,7 +321,9 @@ def test_styles_command_lists_the_builtins(capsys, monkeypatch):
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "ok"
     names = [s["name"] for s in out["data"]["styles"]]
-    assert names == ["sans-hei", "sans-round", "serif-song"]
+    # pen-minimal-probe is the equivalence probe (spec §6 layer 2): a test
+    # fixture that ships with the package, listed here like any other builtin.
+    assert names == ["pen-minimal-probe", "sans-hei", "sans-round", "serif-song"]
     assert all(s["genre"] in ("serif", "sans", "round") for s in out["data"]["styles"])
 
 
