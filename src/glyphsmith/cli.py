@@ -92,6 +92,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="corpus is a GlyphWiki dump_newest_only.txt"
                         " (otherwise auto-detected: first line contains '|' and is not a gsf/ header)")
     sp("styles", "list built-in pen styles (name / genre / path)")
+    g = sp("graph", "pen relational graph as JSON (--plans adds the stroke plans)")
+    g.add_argument("name")
+    g.add_argument("--style", default="serif-song")
+    g.add_argument("--plans", action="store_true")
     return p
 
 
@@ -289,10 +293,24 @@ def _cmd_styles(_args, _corpus=None):
     return {"styles": rows}, []
 
 
+def _cmd_graph(args, corpus):
+    from glyphsmith.pen.backend import expand_to_graph, plan_to_dict
+    from glyphsmith.pen.style import StyleError
+    r = corpus.resolve(args.name)
+    try:
+        g, plans, _items, warns, _counts = expand_to_graph(r, args.style)
+    except StyleError as e:                    # an unusable style is a usage error
+        _fail(2, str(e))
+    data = {"name": args.name, "graph": g.to_dict()}
+    if args.plans:
+        data["plans"] = {str(k): plan_to_dict(v) for k, v in plans.items()}
+    return data, warns
+
+
 _HANDLERS = {"render": _cmd_render, "resolve": _cmd_resolve,
              "inspect": _cmd_inspect, "list": _cmd_list,
              "sample": _cmd_sample, "compare": _cmd_compare,
-             "styles": _cmd_styles}
+             "styles": _cmd_styles, "graph": _cmd_graph}
 
 
 def _looks_like_dump(path: str) -> bool:
