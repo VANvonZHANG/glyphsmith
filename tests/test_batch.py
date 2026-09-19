@@ -105,3 +105,26 @@ def test_batch_mkdir_failure_raises_oserror(tmp_path, eight):
     blocker.write_text("occupied", encoding="utf-8")
     with pytest.raises(OSError):
         batch_render(eight, blocker / "sub", workers=1)
+
+
+# ── T15: the pen backend in a worker process, and its style ──
+
+def test_batch_registry_knows_pen():
+    from glyphsmith.batch import _BACKEND_MODULES
+    assert _BACKEND_MODULES["pen"] == "glyphsmith.pen.backend"
+
+
+def test_batch_renders_with_the_pen_backend_and_its_style(tmp_path):
+    # without the registry entry every worker raises "unknown backend" and the
+    # batch comes back all-errors; the style then has to reach the worker
+    # process too (serif-song hangs the tail wedge, sans-hei has none)
+    p = tmp_path / "c.gsf"
+    p.write_text("gsf/1\nglyph g\nstroke line head flat tail flat (20,50)->(180,50)\n",
+                 encoding="utf-8")
+    song, hei = tmp_path / "song", tmp_path / "hei"
+    assert batch_render(p, song, backend="pen", workers=2) == \
+        {"rendered": 1, "errors": 0, "empty": 0}
+    assert batch_render(p, hei, backend="pen", workers=2, style="sans-hei") == \
+        {"rendered": 1, "errors": 0, "empty": 0}
+    assert (song / "g.svg").read_text(encoding="utf-8") != \
+        (hei / "g.svg").read_text(encoding="utf-8")

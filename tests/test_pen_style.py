@@ -103,6 +103,17 @@ def test_ending_words_are_the_gsf_union_of_twelve():
     (lambda t: t.replace("rules: []",
                          "rules: [{when: {rel: meets}, then: {scale: {hook: {join: 0.5}}}}]"),
      "join"),
+    # T7 residuals handed to T15: the three remaining holes of the same class.
+    # `rules: 5` used to die in `enumerate(5)` as a TypeError, a per-word spec
+    # that is an empty list hit the `or {}` trap and then `.get` on a list
+    # (AttributeError), and a list `then` passed the "exactly one word" check
+    # (its single element iterated as a key) before `then[kind]` raised
+    # TypeError: list indices must be integers.
+    (lambda t: t.replace("rules: []", "rules: 5"), "rules: expected a list"),
+    (lambda t: t.replace("  wedge: {on: horizontal, at: tail, shape: triangle, size: 3.0}",
+                         "  wedge: []"), "decorations.wedge: expected a mapping"),
+    (lambda t: t.replace("rules: []", "rules: [{when: {rel: meets}, then: [suppress]}]"),
+     "rules[0].then: expected a mapping"),
 ])
 def test_validation_is_loud(tmp_path, mutate, needle):
     with pytest.raises(StyleError) as e:
@@ -167,6 +178,26 @@ def test_malformed_yaml_reports_the_file(tmp_path):
     with pytest.raises(StyleError) as e:
         Style.load(p)
     assert str(p) in str(e.value)
+
+
+def test_an_unreadable_style_file_is_a_style_error_naming_it(tmp_path, monkeypatch):
+    # T8 review: this used to escape as a raw OSError, which the CLI then
+    # reported as "cannot open corpus <path>" — a style read is not a corpus read
+    import pathlib
+
+    import glyphsmith.pen.style as style_mod
+    p = write(tmp_path, GOOD)
+    real = pathlib.Path.read_text
+
+    def fake(self, *a, **kw):
+        if self == p:
+            raise PermissionError(13, "Permission denied")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(style_mod.Path, "read_text", fake)
+    with pytest.raises(StyleError) as e:
+        Style.load(p)
+    assert str(p) in str(e.value) and "Permission denied" in str(e.value)
 
 
 def test_unknown_style_name_lists_the_available_ones():

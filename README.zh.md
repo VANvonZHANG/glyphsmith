@@ -8,12 +8,16 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [English (英文主 README)](README.md)
 
-两个后端共用同一套轮廓结构与同一条 CLI：
+三个后端共用同一套轮廓结构与同一条 CLI：
 
 | 后端 | 定位 |
 |---|---|
 | `legacy-kurgm` | [kage-engine](https://github.com/kurgm/kage-engine)（TypeScript）的逐行 Python 移植，与参考实现**逐点全等**（见[验证](#验证)）——回归基线 |
-| `pen-minimal` | 等宽描边骨架预览（butt 端帽、逐段四边形；Levien「弱正确」级）。预览级，是 v2 pen 后端的接口占位 |
+| `pen` | v2 风格引擎：笔画关系图 + 声明式风格文件（`--style serif-song\|sans-hei\|sans-round\|<路径>`）。变宽笔尖；端部形状来自数据，加饰来自风格 |
+| `pen-minimal` | 等宽描边骨架预览（butt 端帽、逐段四边形；Levien「弱正确」级）。预览级，是 v1 接口占位，保留作等价性锚点 |
+
+`--backend both` 把 `legacy-kurgm` 与 `pen` 各渲一次并排返回——有意义的对照现在是
+忠实实现 vs pen，而不再是 忠实实现 vs 预览。
 
 ## 为什么有这个项目
 
@@ -75,8 +79,19 @@ $ glyphsmith render u6f22-j --out png --corpus examples/showcase.gsf
 ```
 
 `--out` 取 `svg`（缺省，结果内联返回、不落盘）、`png`（写到当前目录 `<名字>.png`）或
-`outline.json`。`--backend pen-minimal` 换渲染后端，`--backend both` 双后端各渲一次并出对比；
-`--font` 取 `serif`/`mincho` 或 `sans`/`gothic`。
+`outline.json`。`--backend` 取 `legacy-kurgm`（缺省）、`pen`、`pen-minimal` 或 `both`
+（legacy-kurgm 与 pen 各渲一次，分别放在 `svg_legacy` / `svg_pen`）。`--font` 取
+`serif`/`mincho` 或 `sans`/`gothic`，属于 `legacy-kurgm`；pen 后端不看 `--font`，改用
+`--style <名字|路径>`——三个内置风格由 `glyphsmith styles` 列出：
+
+```sh
+$ glyphsmith render u4e00-j --corpus examples/showcase.gsf --backend pen --style sans-hei
+$ glyphsmith styles
+{"status": "ok", "data": {"styles": [{"name": "sans-hei", "genre": "sans", "path": "…/styles/sans-hei.yaml", "description": "sans style with 0 decoration(s) and 0 rule(s)"}, …]}, "warnings": [], "hints": []}
+```
+
+`--style` 为空、未知，或指向读不出来的文件，都是用法错误（退出码 2，消息在 `data.error`），
+不会静默回退到缺省风格。
 
 ### 解析引用闭包
 
@@ -111,6 +126,7 @@ han = corpus.resolve("u6f22-j")                       # 引用闭包（含环检
 
 serif = Renderer(backend="legacy-kurgm", font="mincho").render(han)
 gothic = Renderer(backend="legacy-kurgm", font="gothic").render(han)     # 同一骨架换书体
+pen = Renderer(backend="pen", style="serif-song").render(han)            # v2 风格引擎
 preview = Renderer(backend="pen-minimal").render(han)
 
 print("contours:", len(serif.contours))               # contours: 28
@@ -129,6 +145,7 @@ svg = serif.to_svg()                                  # Outline -> SVG；或 to_
 | `glyphsmith.protocol` | `Backend` 协议 + 注册表、`Renderer`（公开 API）、`RenderOptions` |
 | `glyphsmith.corpus` | `Corpus`：装载 GSF 文件或 GlyphWiki dump、缓存解析结果、解析引用闭包、检环、报告悬空引用 |
 | `glyphsmith.legacy_kurgm` | 忠实移植：宋/黑规则表（直线与曲线两种）、笔画几何、变换、指纹 |
+| `glyphsmith.pen` | v2 后端：关系图、声明式风格文件、变宽笔尖（`style.py`、`graph.py`、`nib.py`、`backend.py`） |
 | `glyphsmith.pen_minimal` | 预览后端：把每段控制线段按等宽描出轮廓 |
 | `glyphsmith.outline` | 两后端共用的 `Outline` 结构（`to_svg`、`to_path_d`） |
 | `glyphsmith.compare` | 栅格 IoU + 逐笔结构度量 |
@@ -215,8 +232,8 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   后端的动机。
 - **`pen-minimal` 是预览级。** 等宽 `WIDTH = 8.0`、仅 butt 端帽、逐段四边形、无布尔并集、
   跳过变换。它的存在是为了证明 `Backend` 协议不是 legacy 专属形状，兼作快速预览工具。
-  真正的 pen 后端设计（关系图 + 风格文件 + 变宽笔模型）见
-  [`docs/pen-backend-design.md`](docs/pen-backend-design.md)。
+  它当初占位的 v2 引擎现已落地为 `--backend pen`（关系图 + 风格文件 + 变宽笔模型，
+  设计与公式见 [`docs/pen-backend-design.md`](docs/pen-backend-design.md)）。
 - **`batch` 不解析引用。** 与冒烟口径一致，它只拿字形自身的部件渲染（全库吞吐下的取舍），
   因此纯 ref 字形会输出空 SVG。需要闭包渲染时用 `render`。batch 的统计里有 `empty` 计数。
 - **没有 SFD/OTF 导出。** 输出只有 SVG、PNG 与 `outline.json`，没有字体文件写回器。

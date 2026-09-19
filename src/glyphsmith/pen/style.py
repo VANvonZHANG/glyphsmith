@@ -179,19 +179,26 @@ class Style:
         self.endings_source = self._check_ending_source(raw.get("endings_source", "data"))
         self.width_profile = self._check_profile(raw.get("width_profile"))
         self.endings = self._check_endings(raw.get("endings"))
-        self.decorations = self._check_decorations(raw.get("decorations") or {})
+        self.decorations = self._check_decorations(raw.get("decorations"))
         self.caps = self._check_caps_joins(raw.get("caps") or {"default": "butt"},
                                            CAP_WORDS, "caps")
         self.joins = self._check_caps_joins(raw.get("joins") or {"default": "miter"},
                                             JOIN_WORDS, "joins")
-        self.rules = self._check_rules(raw.get("rules") or [])
+        self.rules = self._check_rules(raw.get("rules"))
 
     # ── loading ────────────────────────────────────────────────────────────
     @classmethod
     def load(cls, source) -> "Style":
         path = cls._resolve(source)
         try:
-            raw = yaml.load(path.read_text(encoding="utf-8"), Loader=_StyleLoader)
+            text = path.read_text(encoding="utf-8")
+        except OSError as e:
+            # T8 review: a raw OSError from here reached the CLI's corpus-worded
+            # handler ("cannot open corpus <path>"). A style read is a style
+            # error, and it has to name the file it could not read.
+            raise StyleError(f"{path}: cannot read style file: {e}") from None
+        try:
+            raw = yaml.load(text, Loader=_StyleLoader)
         except yaml.YAMLError as e:
             raise StyleError(f"{path}: cannot parse YAML: {e}") from None
         if raw is None:
@@ -281,10 +288,18 @@ class Style:
 
     @staticmethod
     def _check_decorations(raw) -> dict:
+        # `None` (an absent or empty `decorations:`) means "no ornaments"; any
+        # other non-mapping is a shape error, as under `endings`.
+        if raw is None:
+            return {}
         _check_keys(raw, _DECORATION_WORDS_SET, "decorations")
         out = {}
         for word, spec in raw.items():
-            _check_keys(spec or {}, _DECOR_KEYS, f"decorations.{word}")
+            # The normalised spec is what gets checked: the old `spec or {}`
+            # passed the shape check on an empty mapping and then called `.get`
+            # on the original falsy value (`wedge: []` → AttributeError).
+            spec = {} if spec is None else spec
+            _check_keys(spec, _DECOR_KEYS, f"decorations.{word}")
             if spec.get("on") not in BANDS:
                 raise StyleError(f"decorations.{word}.on: unknown band "
                                  f"{spec.get('on')!r} (allowed: {', '.join(BANDS)})")
@@ -314,12 +329,26 @@ class Style:
 
     @staticmethod
     def _check_rules(raw) -> list:
+        # `None` (an absent or empty `rules:`) means "no rules"; a scalar or a
+        # mapping is a shape error. Without the check a `rules: 5` died inside
+        # `enumerate(5)` as a bare TypeError that named nothing the author wrote.
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            raise StyleError(f"rules: expected a list, got {type(raw).__name__}")
         out = []
         for i, rule in enumerate(raw):
             where = f"rules[{i}]"
             _check_keys(rule, _RULE_KEYS, where)
-            when = rule.get("when") or {}
-            then = rule.get("then") or {}
+            when, then = rule.get("when"), rule.get("then")
+            # Both are mappings or absent. A list `then: [suppress]` used to pass
+            # the one-word check below (its element iterated as a key) and only
+            # fail at `then[kind]` — TypeError: list indices must be integers.
+            if when is not None:
+                _check_mapping(when, f"{where}.when")
+            if then is not None:
+                _check_mapping(then, f"{where}.then")
+            when, then = when or {}, then or {}
             _check_keys(when, _WHEN_KEYS, f"{where}.when")
             if when.get("rel") not in REL_WORDS:
                 raise StyleError(f"{where}.when.rel: unknown relation "

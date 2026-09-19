@@ -30,6 +30,7 @@ from pathlib import Path
 _BACKEND_MODULES = {
     "legacy-kurgm": "glyphsmith.legacy_kurgm",
     "pen-minimal": "glyphsmith.pen_minimal",
+    "pen": "glyphsmith.pen.backend",
 }
 _WINDOW = 4096                       # tasks submitted per batch (in-flight memory ceiling)
 _CHUNKSIZE = 64                      # ex.map dispatch granularity (the brief's value)
@@ -37,10 +38,10 @@ _CHUNKSIZE = 64                      # ex.map dispatch granularity (the brief's 
 
 def _render_one(job):
     """Render one glyph (worker process). Any exception → (name, "", True, err), never raised."""
-    name, data, backend_name = job
+    name, data, backend_name, style = job
     from gsf.kage2 import parse_kage2
     from glyphsmith.corpus import ResolveResult
-    from glyphsmith.protocol import get_backend
+    from glyphsmith.protocol import RenderOptions, get_backend
 
     try:
         mod = _BACKEND_MODULES.get(backend_name)
@@ -48,14 +49,15 @@ def _render_one(job):
             import_module(mod)       # unknown names are left to get_backend's ValueError
         g = parse_kage2(data, name)
         out = get_backend(backend_name).render(
-            ResolveResult(name, g, {name: g}, []))   # smoke convention: parts are only itself
+            ResolveResult(name, g, {name: g}, []),  # smoke convention: parts are only itself
+            RenderOptions(backend=backend_name, style=style))
         return name, out.to_svg(), not out.contours, ""
     except Exception as e:                       # smoke convention: record, do not abort
         return name, "", True, f"{type(e).__name__}: {e}"
 
 
 def batch_render(corpus_path, outdir, *, backend="legacy-kurgm",
-                 workers=4, dump=False) -> dict:
+                 workers=4, dump=False, style="serif-song") -> dict:
     """Batch-render a whole corpus → outdir/<safe-name>.svg, returning a stats
     dict.
 
@@ -65,6 +67,10 @@ def batch_render(corpus_path, outdir, *, backend="legacy-kurgm",
     (the batch convention; a failed outdir mkdir raises OSError straight out and
     the CLI layer turns it into exit 2, consistent with the M2 per-glyph
     contract).
+
+    `style` is the pen backend's style name or path (ignored by the other
+    backends); the CLI validates it before the batch starts, so an unusable one
+    is exit 2 rather than one error per glyph.
     """
     from glyphsmith.cli import _safe_filename
     from glyphsmith.corpus import Corpus
@@ -73,8 +79,9 @@ def batch_render(corpus_path, outdir, *, backend="legacy-kurgm",
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)    # OSError bubbles up → CLI exit 2
     # raw kage2 data strings go into the workers (parsing happens worker-side;
-    # the parent process caches no glyphs)
-    jobs = ((n, corpus._data[n], backend) for n in corpus.iter_names())
+    # the parent process caches no glyphs). The style travels in the job: a
+    # worker process inherits nothing but what is pickled to it.
+    jobs = ((n, corpus._data[n], backend, style) for n in corpus.iter_names())
     stats = {"rendered": 0, "errors": 0, "empty": 0}
 
     def absorb(name, svg, empty, err) -> None:

@@ -162,3 +162,13 @@ def test_style_option_selects_the_style():
     song = get_backend("pen").render(R(g), RenderOptions(backend="pen", style="serif-song"))
     hei = get_backend("pen").render(R(g), RenderOptions(backend="pen", style="sans-hei"))
     assert len(song.contours) == 2 and len(hei.contours) == 1
+
+
+def test_an_empty_style_is_rejected_not_defaulted():
+    # T14 review minor (b): `_style_of`'s `or` turned style="" into serif-song,
+    # so a caller's empty value read as "nothing wrong" (the no-silent-fallbacks
+    # rule). Only a *missing* style falls back now.
+    from glyphsmith.pen.style import StyleError
+    g = parse_kage2("1:0:0:20:50:180:50", "t")
+    with pytest.raises(StyleError):
+        get_backend("pen").render(R(g), RenderOptions(backend="pen", style=""))

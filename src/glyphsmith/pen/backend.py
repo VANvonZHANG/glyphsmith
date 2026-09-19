@@ -101,8 +101,12 @@ class PenBackend(Backend):
 
 def _style_of(opts) -> str:
     # The fallback is RenderOptions().style, not a second "serif-song" literal:
-    # one source of truth, so the dataclass default and this fallback cannot diverge.
-    return getattr(opts, "style", None) or RenderOptions().style
+    # one source of truth, so the dataclass default and this fallback cannot
+    # diverge. Only a *missing* style falls back: `or` used to swallow an empty
+    # one as well (T14 review minor b), so `style=""` read as "nothing wrong"
+    # while rendering serif-song. It now reaches Style.load, which rejects it.
+    style = getattr(opts, "style", None)
+    return RenderOptions().style if style is None else style
 
 
 Backend.register(PenBackend)
