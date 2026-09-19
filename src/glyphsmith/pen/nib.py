@@ -81,24 +81,35 @@ def _join_replace(prev, nxt, vertex, d_prev, d_next, half, kind, miter_limit, si
     """Replace the offset pair (prev, nxt) around one interior vertex.
 
     Concave (inner) corners are always trimmed to the offset-line intersection:
-    without that the two offset segments overlap, the contour self-intersects,
-    and the shoelace area overcounts the covered region (measured: a 90-degree
-    bend gives 2000 instead of the correct 1987.5 — and 2000 happens to be the
-    miter answer, so only a bevel/round test catches it).
+    without that the offset segments overlap, the contour self-intersects, and
+    the shoelace area overcounts the covered region (measured: a 90-degree bend
+    gives 2000 instead of the correct 1987.5 — and 2000 happens to be the miter
+    answer, so only a bevel/round test catches it).
 
-    Convex (outer) corners follow the join style. T5 adds miter and round: until
-    then any unimplemented kind raises rather than silently falling back to bevel.
+    Convex (outer) corners follow the join style. `miter_limit` is the CSS
+    ratio |X - vertex| / half-width, i.e. 1/sin(theta/2).
     """
-    if kind not in ("", "bevel"):
-        raise NotImplementedError(
-            f"join kind {kind!r} is not implemented yet (T5 adds miter and round)")
+    if kind not in ("", "bevel", "miter", "round"):
+        raise ValueError(
+            f"unknown join kind {kind!r} (allowed: '', bevel, miter, round)")
     cross = _cross(d_prev, d_next)
     if abs(cross) < 1e-12:                      # collinear: the pair coincides
         return [nxt] if _close(prev, nxt) else [prev, nxt]
+    x = _line_intersection(prev, d_prev, nxt, d_next)
+    if x is None:
+        return [prev, nxt]
     if sign * cross > 0.0:                      # concave side: trim
-        x = _line_intersection(prev, d_prev, nxt, d_next)
-        if x is not None:
-            return [x]
+        return [x]
+    if kind == "miter" and math.hypot(x[0] - vertex[0],
+                                      x[1] - vertex[1]) <= miter_limit * half:
+        return [x]
+    if kind == "round":
+        m0, m1 = left_normal(d_prev), left_normal(d_next)
+        mx, my = m0[0] + m1[0], m0[1] + m1[1]
+        n = math.hypot(mx, my)
+        mx, my = (m0 if n == 0.0 else (mx / n, my / n))
+        through = (vertex[0] + sign * mx * half, vertex[1] + sign * my * half)
+        return [prev] + _arc_points(vertex, half, prev, nxt, through) + [nxt]
     return [prev, nxt]                          # bevel
 
 

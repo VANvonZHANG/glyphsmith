@@ -70,17 +70,26 @@ def test_collinear_join_adds_nothing():
 
 def test_joins_are_indexed_per_interior_vertex():
     # A 4-point centerline has 2 interior vertices; entry i of `joins` belongs to
-    # vertex i+1. The unimplemented-join guard makes the mapping observable: with
-    # the off-by-one, the single entry landed on no vertex at all and nothing raised.
+    # vertex i+1. The unknown-join guard makes the mapping observable: with the
+    # off-by-one, the single entry landed on no vertex at all and nothing raised.
     pts = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (200.0, 100.0)]
-    with pytest.raises(NotImplementedError):
-        body_contour(plan(pts, width=10.0, joins=["miter"]))
-    with pytest.raises(NotImplementedError):
-        body_contour(plan(pts, width=10.0, joins=["bevel", "miter"]))
-    # a fully implemented join list stays silent and yields a closed CCW contour
+    with pytest.raises(ValueError):
+        body_contour(plan(pts, width=10.0, joins=["wedge"]))
+    with pytest.raises(ValueError):
+        body_contour(plan(pts, width=10.0, joins=["bevel", "wedge"]))
+    # a fully valid join list stays silent and yields a closed CCW contour
     c = body_contour(plan(pts, width=10.0, joins=["bevel", "bevel"]))
     assert shoelace(c) > 0.0
     assert c[0] != c[-1]
+
+
+def test_unknown_join_kinds_raise():
+    # T5 implements the whole join vocabulary (bevel/miter/round, "" = default);
+    # anything else is invalid rather than merely unimplemented, and must not
+    # silently degrade to a bevel.
+    for kind in ("wedge", "MITER", "rounds"):
+        with pytest.raises(ValueError):
+            body_contour(plan(BEND, width=10.0, joins=[kind]))
 
 
 def test_unknown_cap_styles_raise():
@@ -157,3 +166,53 @@ def test_round_cap_arc_is_finer_than_the_tolerance():
     angs = sorted(math.atan2(y, x) for x, y in pts)
     steps = [angs[i + 1] - angs[i] for i in range(len(angs) - 1)]
     assert steps and max(steps) <= 2 * math.acos(1 - ARC_TOL / 20.0) + 1e-9
+
+
+BEND = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)]
+
+
+def test_miter_join_area_is_exactly_sum_of_segments():
+    # for a right angle with equal widths the miter join makes the area exactly
+    # sum(L_i * w) — the corner square w^2/4 added, the overlap w^2/4 removed
+    c = body_contour(plan(BEND, width=10.0, joins=["miter"]))
+    assert shoelace(c) == pytest.approx(2000.0)
+    assert (105.0, -5.0) in c, "the miter point is the outer offset intersection"
+    assert (100.0, -5.0) not in c and (105.0, 0.0) not in c
+
+
+def test_miter_falls_back_to_bevel_past_the_limit():
+    c = body_contour(plan(BEND, width=10.0, joins=["miter"], miter_limit=1.0))
+    # |X - vertex| = 5*sqrt(2) = 7.07 > 1.0 * 5 → bevel
+    assert shoelace(c) == pytest.approx(1987.5)
+
+
+def test_bevel_join_area():
+    c = body_contour(plan(BEND, width=10.0, joins=["bevel"]))
+    assert shoelace(c) == pytest.approx(1987.5)
+    assert (100.0, -5.0) in c and (105.0, 0.0) in c
+
+
+def test_round_join_arc_lies_on_the_vertex_circle():
+    c = body_contour(plan(BEND, width=10.0, joins=["round"]))
+    a = shoelace(c)
+    # true area = union(1975) + quarter disc(pi*25/4) = 1994.6349; the inscribed
+    # polygon under-counts by 0.5*r^2*(theta - k*sin(theta/k)) ≈ 0.885
+    assert 1993.5 <= a <= 2000.0
+    arc = [(x, y) for x, y in c if x > 100.0 and y < 0.0]
+    assert arc, "the round join must bulge outside the corner"
+    for x, y in arc:
+        assert math.hypot(x - 100.0, y) == pytest.approx(5.0, abs=1e-9)
+
+
+def test_concave_corner_stays_trimmed_for_every_join_style():
+    for kind in ("miter", "bevel", "round"):
+        c = body_contour(plan(BEND, width=10.0, joins=[kind]))
+        assert (95.0, 5.0) in c, f"{kind}: the inner corner must still be trimmed"
+        assert (100.0, 5.0) not in c and (95.0, 0.0) not in c
+
+
+def test_join_style_applies_per_vertex():
+    # two bends, different joins, and the areas are the sum of the two corners'
+    pts = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (200.0, 100.0)]
+    c = body_contour(plan(pts, width=10.0, joins=["miter", "bevel"]))
+    assert shoelace(c) == pytest.approx(3000.0 - 12.5)
