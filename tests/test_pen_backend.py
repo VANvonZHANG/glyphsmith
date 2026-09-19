@@ -4,7 +4,10 @@ import pytest
 
 from gsf.kage2 import parse_kage2
 
+from glyphsmith.compare import compare
+from glyphsmith.legacy_kurgm import LegacyKurgmBackend
 from glyphsmith.pen.backend import expand_to_graph, plan_to_dict
+from glyphsmith.protocol import RenderOptions, get_backend
 
 
 class R:
@@ -80,3 +83,73 @@ def test_graph_command_reports_an_unknown_style(tmp_path, capsys):
         main(["graph", "probe", "--corpus", str(corpus), "--style", "nope"])
     assert e.value.code == 2
     assert "nope" in json.loads(capsys.readouterr().out)["data"]["error"]
+
+
+def test_pen_backend_is_registered():
+    from glyphsmith.protocol import Backend
+    assert "pen" in Backend.available()
+
+
+def test_pen_renders_a_horizontal():
+    g = parse_kage2("1:0:0:20:50:180:50", "t")
+    o = get_backend("pen").render(R(g), RenderOptions(backend="pen", style="serif-song"))
+    assert len(o.contours) == 2, "body + wedge"
+    assert all(len(c) >= 3 for c in o.contours)
+
+
+def test_pen_differs_from_legacy_but_agrees_roughly():
+    g = parse_kage2("1:0:0:20:50:180:50$1:0:4:100:17:100:185", "t")
+    pen = get_backend("pen").render(R(g), RenderOptions(backend="pen", style="serif-song"))
+    leg = LegacyKurgmBackend().render(R(g))
+    iou = compare(pen, leg).iou
+    assert 0.5 < iou < 1.0, f"same skeleton, different engine: IoU {iou}"
+
+
+def test_render_separated_gives_one_outline_per_stroke():
+    g = parse_kage2("1:0:0:20:50:180:50$1:0:4:100:17:100:185", "t")
+    outs = get_backend("pen").render_separated(R(g), RenderOptions(backend="pen"))
+    assert len(outs) == 2
+    assert all(o.contours for o in outs)
+
+
+def test_transform_ops_are_applied_to_what_was_drawn_before_them():
+    # t97 reflects the accumulated outline vertically: the body of stroke 0 is
+    # drawn first, then flipped inside the 200x200 rect
+    g = parse_kage2("1:0:0:20:30:180:30$0:97:0:0:0:200:200", "t")
+    o = get_backend("pen").render(R(g), RenderOptions(backend="pen"))
+    ys = [y for c in o.contours for _x, y, _ in c]
+    assert min(ys) > 100.0, "after reflectY about y=100 the stroke moves down"
+
+
+def test_warnings_are_written_back_on_both_paths():
+    g = parse_kage2("-:0:0:0:0:0:0$1:0:0:20:50:180:50", "rawg")
+    a, b = R(g), R(g)
+    get_backend("pen").render(a, RenderOptions(backend="pen"))
+    get_backend("pen").render_separated(b, RenderOptions(backend="pen"))
+    assert any("raw op skipped" in w for w in a.warnings)
+    assert a.warnings == b.warnings
+
+
+def test_degraded_strokes_are_reported_through_result_warnings():
+    # A hairpin: the two segments nearly reverse (the control polygon turns 177
+    # degrees at (200,0)), so the curvature radius at the flattened apex (2.04)
+    # is far below the local half-width (5.75) of serif-song's vertical band.
+    # NOT the brief's `2:0:0:0:0:200:0:10:0`: all three of its control points sit
+    # on y=0, so the quad is collinear, the chord height is 0 and centerline's
+    # flattening drops the apex outright - the centerline becomes the straight
+    # two-point line [(0,0),(10,0)], curvature_radius returns [] (it needs an
+    # interior vertex) and no curvature warning can ever fire. This is the same
+    # seven numbers with the last pair transposed, (x3,y3)=(0,10); the chord is
+    # then vertical and the degradation really fires
+    # (`degraded: curvature radius 2.04 < half-width 5.75 at vertex 5`).
+    g = parse_kage2("2:0:0:0:0:200:0:0:10", "hairpin")
+    r = R(g)
+    get_backend("pen").render(r, RenderOptions(backend="pen", style="serif-song"))
+    assert any("curvature" in w for w in r.warnings)
+
+
+def test_style_option_selects_the_style():
+    g = parse_kage2("1:0:0:20:50:180:50", "t")
+    song = get_backend("pen").render(R(g), RenderOptions(backend="pen", style="serif-song"))
+    hei = get_backend("pen").render(R(g), RenderOptions(backend="pen", style="sans-hei"))
+    assert len(song.contours) == 2 and len(hei.contours) == 1

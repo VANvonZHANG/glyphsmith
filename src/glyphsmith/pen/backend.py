@@ -70,3 +70,33 @@ def render_stream(result, style_name: str):
         per_stroke.append(o)
         idx += 1
     return outline, per_stroke, warnings
+
+
+class PenBackend(Backend):
+    """The v2 research backend: style files instead of rule tables.
+
+    Weak correctness (spec §4.3.3): one CCW contour per stroke body, decorations
+    stacked as separate contours; degenerate strokes fall back to per-segment
+    quads and say so in result.warnings.
+    """
+
+    name = "pen"
+
+    def render(self, result, opts=None) -> Outline:
+        outline, _per_stroke, warnings = render_stream(
+            result, _style_of(opts))
+        result.warnings[:] = warnings          # v1 final-review I2: never lose warnings
+        return outline
+
+    def render_separated(self, result, opts=None) -> list:
+        _outline, per_stroke, warnings = render_stream(result, _style_of(opts))
+        result.warnings[:] = warnings
+        return per_stroke
+
+
+def _style_of(opts) -> str:
+    style = getattr(opts, "style", None)
+    return style or "serif-song"
+
+
+Backend.register(PenBackend)
