@@ -274,12 +274,16 @@ def test_list_auto_detects_dump_corpus(tmp_path):
 
 
 def test_render_both_backends_svg(mini):
-    # I1: --backend both renders once per backend, with both svg keys + a backends list
+    # I1: --backend both renders once per backend, with both svg keys + a backends list.
+    # T15/D11: the second leg is pen (v2), not pen-minimal — the useful contrast
+    # is now faithful-vs-pen.
     code, payload = _run(["render", "g", "--corpus", str(mini), "--backend", "both"])
     assert code == 0 and payload["status"] == "ok"
     assert payload["data"]["svg_legacy"].startswith("<svg")
     assert payload["data"]["svg_pen"].startswith("<svg")
-    assert payload["data"]["backends"] == ["legacy-kurgm", "pen-minimal"]
+    assert payload["data"]["backends"] == ["legacy-kurgm", "pen"]
+    assert payload["data"]["svg_legacy"] != payload["data"]["svg_pen"], \
+        "the two legs are different engines"
 
 
 def test_render_both_backends_png_two_files(mini, tmp_path, monkeypatch):
@@ -306,3 +310,157 @@ def test_corpus_path_is_directory_exit2_json(tmp_path):
     # a raw traceback
     code, payload = _run(["render", "g", "--corpus", str(tmp_path)])
     assert code == 2 and payload["status"] == "error"
+
+
+def test_styles_command_lists_the_builtins(capsys, monkeypatch):
+    from glyphsmith.cli import main
+    monkeypatch.setattr("sys.argv", ["glyphsmith", "styles"])
+    with pytest.raises(SystemExit) as e:
+        main(["styles"])
+    assert e.value.code == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "ok"
+    names = [s["name"] for s in out["data"]["styles"]]
+    # pen-minimal-probe is the equivalence probe (spec §6 layer 2): a test
+    # fixture that ships with the package, listed here like any other builtin.
+    assert names == ["pen-minimal-probe", "sans-hei", "sans-round", "serif-song"]
+    assert all(s["genre"] in ("serif", "sans", "round") for s in out["data"]["styles"])
+
+
+# ── T15: the pen backend is reachable from the CLI (--style, both = legacy+pen) ──
+
+@pytest.fixture
+def probe(tmp_path):
+    """The brief's `gsf/1\\nname: probe\\n1:0:0:20:50:180:50\\n` is not valid GSF
+    (Corpus.from_gsf reads `glyph`/`stroke` blocks; a KAGE row under a `name:`
+    header loads as an EMPTY corpus → exit 3). This block is byte-identical
+    input: Stroke('1','0','0','20','50','180','50')."""
+    p = tmp_path / "probe.gsf"
+    p.write_text("gsf/1\nglyph probe\nstroke line head flat tail flat (20,50)->(180,50)\n",
+                 encoding="utf-8")
+    return p
+
+
+def test_backend_both_is_now_legacy_and_pen(probe, capsys):
+    from glyphsmith.cli import BOTH_BACKENDS, main
+    assert BOTH_BACKENDS == ["legacy-kurgm", "pen"]
+    with pytest.raises(SystemExit) as e:
+        main(["render", "probe", "--corpus", str(probe), "--backend", "both"])
+    assert e.value.code == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert set(data) >= {"svg_legacy", "svg_pen"}
+    assert data["backends"] == ["legacy-kurgm", "pen"]
+
+
+def test_render_with_an_explicit_style(probe, capsys):
+    from glyphsmith.cli import main
+    with pytest.raises(SystemExit) as e:
+        main(["render", "probe", "--corpus", str(probe),
+              "--backend", "pen", "--style", "sans-hei", "--out", "svg"])
+    assert e.value.code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ok"
+
+
+def test_render_with_a_bad_style_exits_2(probe, capsys):
+    from glyphsmith.cli import main
+    with pytest.raises(SystemExit) as e:
+        main(["render", "probe", "--corpus", str(probe),
+              "--backend", "pen", "--style", "nope"])
+    assert e.value.code == 2
+    assert "nope" in json.loads(capsys.readouterr().out)["data"]["error"]
+
+
+def test_render_with_a_style_path(probe, tmp_path, capsys):
+    # `--style` also takes a path to a .yaml (not just a built-in name), which is
+    # why the empty-value check is a handler check and not argparse's choices=
+    from glyphsmith.cli import main
+    from glyphsmith.pen.style import Style
+    path = tmp_path / "my.yaml"
+    path.write_text((Style.builtin_dir() / "sans-hei.yaml").read_text(encoding="utf-8"),
+                    encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        main(["render", "probe", "--corpus", str(probe),
+              "--backend", "pen", "--style", str(path)])
+    assert e.value.code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ok"
+
+
+def test_render_with_a_non_utf8_style_exits_2(probe, tmp_path, capsys):
+    # F1: a style file with invalid UTF-8 bytes raised UnicodeDecodeError, which
+    # is a ValueError and so passed through `_checked_style`, every handler and
+    # main itself — a full traceback on stderr with exit 1, against the module
+    # header's "an unusable --style is exit 2". Calling main in-process is the
+    # strongest form of this test: a leaking exception errors the test instead
+    # of raising SystemExit(2).
+    path = tmp_path / "bad-utf8.yaml"
+    path.write_bytes(b"name: probe\n# \xff\xfe not utf-8\n")
+    code, payload = _run(["render", "probe", "--corpus", str(probe),
+                          "--backend", "pen", "--style", str(path)])
+    assert code == 2 and payload["status"] == "error"
+    err = payload["data"]["error"]
+    assert str(path) in err, err
+    assert "cannot read style file" in err, err
+
+
+def test_an_empty_style_is_a_usage_error_not_the_default(probe, capsys):
+    # T14 review minor (b): `--style ""` used to become serif-song at the pen
+    # edge (pen.backend._style_of's `or`), i.e. a typo read as "nothing wrong"
+    from glyphsmith.cli import main
+    with pytest.raises(SystemExit) as e:
+        main(["render", "probe", "--corpus", str(probe), "--backend", "pen",
+              "--style", ""])
+    assert e.value.code == 2
+    err = json.loads(capsys.readouterr().out)["data"]["error"]
+    assert "--style" in err, err
+
+
+def test_both_validates_the_pen_style_before_writing_anything(probe, tmp_path, monkeypatch):
+    # `both` renders the pen leg too, so its --style is validated the same way,
+    # and the usage error lands before any file is written
+    monkeypatch.chdir(tmp_path)
+    code, payload = _run(["render", "probe", "--corpus", str(probe), "--backend", "both",
+                          "--style", "nope", "--out", "png"])
+    assert code == 2 and "nope" in payload["data"]["error"]
+    assert not list(tmp_path.glob("*.png")), "nothing is written before the usage error"
+
+
+def test_styles_command_reports_an_unreadable_style_file(capsys, monkeypatch):
+    # T8 review: an unreadable styles/*.yaml is reported as *that file's* problem.
+    # It used to reach main's corpus-worded OSError handler ("cannot open corpus
+    # glyphwiki-newest.gsf") although `styles` reads no corpus at all.
+    import pathlib
+
+    import glyphsmith.pen.style as style_mod
+    real = pathlib.Path.read_text
+
+    def fake(self, *a, **kw):
+        if self.name == "sans-hei.yaml":
+            raise PermissionError(13, "Permission denied")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(style_mod.Path, "read_text", fake)
+    code, payload = _run(["styles"])
+    assert code == 2 and payload["status"] == "error"
+    err = payload["data"]["error"]
+    assert "sans-hei.yaml" in err and "Permission denied" in err
+    assert "corpus" not in err, f"misattributed to the corpus: {err}"
+
+
+def test_batch_cli_passes_the_style_through(probe, tmp_path):
+    # --style reaches the batch worker: serif-song adds the tail wedge, sans-hei
+    # does not (workers=1 keeps this a plain end-to-end check; test_batch covers
+    # the worker-process path)
+    for style, out in (("serif-song", "song"), ("sans-hei", "hei")):
+        code, payload = _run(["batch", "--corpus", str(probe), "--out", str(tmp_path / out),
+                              "--backend", "pen", "--style", style, "--workers", "1"])
+        assert code == 0, payload
+    song = (tmp_path / "song" / "probe.svg").read_text(encoding="utf-8")
+    hei = (tmp_path / "hei" / "probe.svg").read_text(encoding="utf-8")
+    assert song != hei, "the two styles must not render identically"
+
+
+def test_batch_cli_reports_an_unknown_style_before_rendering(probe, tmp_path):
+    # a bad --style is a usage error, not 2.2M per-glyph worker errors
+    code, payload = _run(["batch", "--corpus", str(probe), "--out", str(tmp_path / "o"),
+                          "--backend", "pen", "--style", "nope", "--workers", "1"])
+    assert code == 2 and "nope" in payload["data"]["error"]

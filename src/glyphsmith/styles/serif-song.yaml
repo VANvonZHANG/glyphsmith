@@ -1,0 +1,53 @@
+# src/glyphsmith/styles/serif-song.yaml — the minimal validatable recipe: T9
+# expands the semantics, T7 only has to prove the file passes validation.
+name: serif-song
+genre: serif
+endings_source: data
+width_profile:
+  horizontal:    [[0.0, 4.0], [1.0, 4.5]]
+  vertical:      [[0.0, 12.0], [1.0, 11.0]]
+  left-falling:  [[0.0, 9.0], [0.35, 6.0], [1.0, 0.8]]
+  right-falling: [[0.0, 5.0], [0.6, 10.0], [1.0, 1.0]]
+  rising:        [[0.0, 7.0], [1.0, 0.8]]
+endings:
+  flat: {}
+  join-h: {}
+  tip: {min_width: 0.15}
+  corner-ul: {join: miter, miter_limit: 3.0}
+  corner-ur: {join: miter, miter_limit: 3.0}
+  join-v: {}
+  hook: {length: 2.5, width: 1.0}
+  heel-ll: {length: 0.1}
+  heel-lr: {length: 0.1}
+  heel-ll-old: {length: 0.1}
+  heel-ll-new: {length: 0.1}
+  cap-t: {}
+decorations:
+  wedge: {on: horizontal, at: tail, shape: triangle, size: 3.0}
+caps: {default: butt}
+joins: {default: miter, bend: round}
+# Composition rules (spec §4.2.4), read in file order. The two shipped here are
+# the serif ones the legacy engine hard-codes: the wedge is dropped where a
+# horizontal's tail runs into a vertical, and a hook shortens as the space on
+# its left narrows.
+rules:
+  # topological: a wedge is a terminal ornament, so it is wrong where the
+  # horizontal's tail already lands on a vertical (the vertical closes the end)
+  - id: no-wedge-where-tail-meets-vertical
+    when: {rel: meets, from: horizontal, at: tail, to: vertical}
+    then: {suppress: wedge}
+  # metric: legacy's adjustHane is `adj = 7 - floor(mn / 15)` (mincho.py:303)
+  # and the hook's length factor is `1 - adj / 10` (mincho_cd.py:457) — 15-unit
+  # bins, not a curve — so the table below is legacy-exact by construction:
+  # `1 - (7 - floor(mn / 15)) / 10`, and a closer vertical means a shorter hook.
+  # The `mn` fed in is this engine's nearest-left-vertical distance; legacy's
+  # own `mn` additionally carries the no-nearby-vertical quirk at
+  # mincho.py:295-301, which this table does not reproduce.
+  - id: hane-shortens-near-vertical
+    when: {rel: near, from: hook, to: vertical, side: left}
+    then:
+      scale:
+        hook:
+          length:
+            by: distance
+            steps: [[0, 0.3], [15, 0.4], [30, 0.5], [45, 0.6], [60, 0.7], [75, 0.8], [90, 0.9], [105, 1.0]]

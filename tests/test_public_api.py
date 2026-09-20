@@ -22,9 +22,12 @@ def test_cold_interpreter_default_backend_registered():
 
 
 def test_cold_interpreter_both_backends_registered():
+    # The list gains a name whenever a backend ships (T8 added pen-minimal,
+    # T14 added pen); an exact list is what makes this test able to catch a
+    # backend that __init__ forgets to import.
     code = ("from glyphsmith.protocol import Backend; import glyphsmith; "
             "assert sorted(Backend.available()) == "
-            "['legacy-kurgm', 'pen-minimal']")
+            "['legacy-kurgm', 'pen', 'pen-minimal']")
     proc = subprocess.run([sys.executable, "-c", code],
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr

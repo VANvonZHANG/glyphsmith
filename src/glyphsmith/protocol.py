@@ -17,6 +17,7 @@ class RenderOptions:
     font: str = "mincho"          # CLI aliases serif→mincho, sans→gothic are resolved in cli
     use_curve: bool = False
     size: int | None = None
+    style: str = "serif-song"     # pen backend only; --font is meaningless there
 
 
 class Backend(ABC):

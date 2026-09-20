@@ -8,12 +8,16 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [English (英文主 README)](README.md)
 
-两个后端共用同一套轮廓结构与同一条 CLI：
+三个后端共用同一套轮廓结构与同一条 CLI：
 
 | 后端 | 定位 |
 |---|---|
 | `legacy-kurgm` | [kage-engine](https://github.com/kurgm/kage-engine)（TypeScript）的逐行 Python 移植，与参考实现**逐点全等**（见[验证](#验证)）——回归基线 |
-| `pen-minimal` | 等宽描边骨架预览（butt 端帽、逐段四边形；Levien「弱正确」级）。预览级，是 v2 pen 后端的接口占位 |
+| `pen` | v2 风格引擎：笔画关系图 + 声明式风格文件（`--style serif-song\|sans-hei\|sans-round\|<路径>`）。变宽笔尖；端部形状来自数据，加饰来自风格。用法文档：[`docs/pen-backend.md`](docs/pen-backend.md) |
+| `pen-minimal` | 等宽描边骨架预览（butt 端帽、逐段四边形；Levien「弱正确」级）。预览级，是 v1 接口占位，保留作等价性锚点 |
+
+`--backend both` 把 `legacy-kurgm` 与 `pen` 各渲一次并排返回——有意义的对照现在是
+忠实实现 vs pen，而不再是 忠实实现 vs 预览。
 
 ## 为什么有这个项目
 
@@ -75,8 +79,21 @@ $ glyphsmith render u6f22-j --out png --corpus examples/showcase.gsf
 ```
 
 `--out` 取 `svg`（缺省，结果内联返回、不落盘）、`png`（写到当前目录 `<名字>.png`）或
-`outline.json`。`--backend pen-minimal` 换渲染后端，`--backend both` 双后端各渲一次并出对比；
-`--font` 取 `serif`/`mincho` 或 `sans`/`gothic`。
+`outline.json`。`--backend` 取 `legacy-kurgm`（缺省）、`pen`、`pen-minimal` 或 `both`
+（legacy-kurgm 与 pen 各渲一次，分别放在 `svg_legacy` / `svg_pen`）。`--font` 取
+`serif`/`mincho` 或 `sans`/`gothic`，属于 `legacy-kurgm`；pen 后端不看 `--font`，改用
+`--style <名字|路径>`——三个内置风格由 `glyphsmith styles` 列出：
+
+```sh
+$ glyphsmith render u4e00-j --corpus examples/showcase.gsf --backend pen --style sans-hei
+$ glyphsmith styles
+{"status": "ok", "data": {"styles": [{"name": "sans-hei", "genre": "sans", "path": "…/styles/sans-hei.yaml", "description": "sans style with 0 decoration(s) and 0 rule(s)"}, …]}, "warnings": [], "hints": []}
+```
+
+`--backend pen` 下，`--style` 为空、未知，或指向读不出来的文件，都是用法错误（退出码 2，
+消息在 `data.error`），不会静默回退到缺省风格。其他后端根本不会打开风格文件，所以
+`render --style nope` 对它们按设计退出 0：这个值只在真正会被读取的地方校验（`cli.py`；空的
+`--style` 在任何后端都是用法错误——没有人会真的想要它）。
 
 ### 解析引用闭包
 
@@ -111,6 +128,7 @@ han = corpus.resolve("u6f22-j")                       # 引用闭包（含环检
 
 serif = Renderer(backend="legacy-kurgm", font="mincho").render(han)
 gothic = Renderer(backend="legacy-kurgm", font="gothic").render(han)     # 同一骨架换书体
+pen = Renderer(backend="pen", style="serif-song").render(han)            # v2 风格引擎
 preview = Renderer(backend="pen-minimal").render(han)
 
 print("contours:", len(serif.contours))               # contours: 28
@@ -129,6 +147,7 @@ svg = serif.to_svg()                                  # Outline -> SVG；或 to_
 | `glyphsmith.protocol` | `Backend` 协议 + 注册表、`Renderer`（公开 API）、`RenderOptions` |
 | `glyphsmith.corpus` | `Corpus`：装载 GSF 文件或 GlyphWiki dump、缓存解析结果、解析引用闭包、检环、报告悬空引用 |
 | `glyphsmith.legacy_kurgm` | 忠实移植：宋/黑规则表（直线与曲线两种）、笔画几何、变换、指纹 |
+| `glyphsmith.pen` | v2 后端：关系图、声明式风格文件、变宽笔尖（`style.py`、`graph.py`、`nib.py`、`backend.py`） |
 | `glyphsmith.pen_minimal` | 预览后端：把每段控制线段按等宽描出轮廓 |
 | `glyphsmith.outline` | 两后端共用的 `Outline` 结构（`to_svg`、`to_path_d`） |
 | `glyphsmith.compare` | 栅格 IoU + 逐笔结构度量 |
@@ -172,16 +191,16 @@ svg = serif.to_svg()                                  # Outline -> SVG；或 to_
 | golden 矩阵 | kage-engine 自带的 7,614 用例，逐字符指纹 | **7,614/7,614** |
 | 交叉引擎 | 真实 dump 随机抽样 1,000 字形，与 Node 版 kage-engine 指纹对拍 | **1,000/1,000** |
 | 全量冒烟 | `dump_newest_only.txt` 全部字形（2,221,895）渲染并计数、不写盘 | **2,221,895 字形，err=0** |
-| 测试套件 | `pytest` | **7,783 passed** |
+| 测试套件 | `pytest` | **8,019 passed** |
 
 golden 夹具是 kage-engine 自带的 `test/strokes.js` 快照
 （`tests/fixtures/kurgm-strokes-golden.tsv`）——是**参考实现的期望值**，不是我们自己写的期望。
 
 ```sh
-pytest -q                                                   # 7,775 passed, 8 skipped（无外部数据时）
+pytest -q                                                   # 8,011 passed, 8 skipped（无外部数据时）
 pytest -m golden -q                                         # 7,614 passed —— golden 矩阵
 GSF_DUMP=<dump>/dump_newest_only.txt \
-  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 7,783 passed —— 零跳过
+  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 8,019 passed —— 零跳过
 ```
 
 无外部资源时跳过的 8 条，是需要 318MB dump、Node.js 或 kage-engine 检出物的用例；它们
@@ -205,7 +224,7 @@ GSF_DUMP=<dump>/dump_newest_only.txt \
 
 ```sh
 $ GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000 --workers 8
-scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.7s rate=7322/s
+scope=stroke-only backend=legacy-kurgm style=serif-song workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.0s rate=10067/s
 ```
 
 ## 已知限制
@@ -215,8 +234,8 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   后端的动机。
 - **`pen-minimal` 是预览级。** 等宽 `WIDTH = 8.0`、仅 butt 端帽、逐段四边形、无布尔并集、
   跳过变换。它的存在是为了证明 `Backend` 协议不是 legacy 专属形状，兼作快速预览工具。
-  真正的 pen 后端设计（关系图 + 风格文件 + 变宽笔模型）见
-  [`docs/pen-backend-design.md`](docs/pen-backend-design.md)。
+  它当初占位的 v2 引擎现已落地为 `--backend pen`（关系图 + 风格文件 + 变宽笔模型，
+  设计与公式见 [`docs/pen-backend-design.md`](docs/pen-backend-design.md)）。
 - **`batch` 不解析引用。** 与冒烟口径一致，它只拿字形自身的部件渲染（全库吞吐下的取舍），
   因此纯 ref 字形会输出空 SVG。需要闭包渲染时用 `render`。batch 的统计里有 `empty` 计数。
 - **没有 SFD/OTF 导出。** 输出只有 SVG、PNG 与 `outline.json`，没有字体文件写回器。
@@ -228,6 +247,16 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
 - **版本兜底语义与 kage-engine 不同，且是有意为之。** 引用了 `X@N` 但该版本行不在
   newest dump 时，glyphsmith 回退渲染 newest `X` 并发 `version ref fallback` 警告；
   kage-engine 精确匹配、查不到即静默不画。这是语料层的长期差异（已披露），不在渲染器内。
+- **pen 后端不在 golden 差分基线内。** 它与 `legacy-kurgm` 共享骨架（展开、笔画顺序），
+  但有意不共享几何——加饰是标定而非移植、曲线走真曲线而非控制多边形、两条规则是声明式
+  改写而非移植、`meets_tol = 1.0` 取代精确坐标相等。因此两者之间的 IoU 只是**参照数值，
+  不是通过/失败的门槛**：`scripts/pen_style_diff.py --closure` 在 n = 200 时为 0.7409
+  （n = 2000 时 0.7412）——`--closure` 不能省，stroke-only 默认口径比的多是空白掩码。
+  完整差异清单与五层验证见 [`docs/pen-backend.md`](docs/pen-backend.md)。
+
+> **本仓库里的任何一层都无法判断 pen 的输出「像不像宋体」。** 那是对一款字体的美学判断，pen
+> 后端不假装能给它打分：各验证层约束的是几何与接线，self-golden 只冻结它们产出的结果。完整声明
+> ——五层各自能证明什么、不能证明什么——见 [pen 后端指南](docs/pen-backend.md#validation-five-layers-and-what-each-cannot-tell-you)。
 
 ## 许可证与谱系
 

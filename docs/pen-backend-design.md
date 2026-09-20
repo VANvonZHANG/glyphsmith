@@ -48,6 +48,11 @@ replace legacy-kurgm; it divides labour with it:
 3. **`--backend` end to end**: the CLI's
    `--backend legacy-kurgm|pen-minimal|both`, `Renderer(backend=…)` and
    `batch --backend` are all in place; a new backend only has to register.
+   (v1 shipped that set as `legacy-kurgm|pen-minimal|both` with `both` meaning
+   legacy + pen-minimal. **v2 changed `both` to legacy + `pen`** and added
+   `--style`, so the live set today is
+   `legacy-kurgm|pen|pen-minimal|both`; `pen-minimal` stays selectable by name
+   as the region-equivalence anchor. See `docs/pen-backend.md`.)
 4. **What `pen-minimal` proves**: ref expansion reuses legacy's `expand` (the
    first evidence that the protocol generalizes), and it writes back the same
    `result.warnings` as legacy (missing part / raw op do not go silent just

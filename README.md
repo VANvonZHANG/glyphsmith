@@ -8,12 +8,16 @@ agent-friendly CLI and a Python library.
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [中文说明（Chinese）](README.zh.md)
 
-Two backends share one outline structure and one CLI:
+Three backends share one outline structure and one CLI:
 
 | Backend | What it is |
 |---|---|
 | `legacy-kurgm` | A line-by-line Python port of the [kage-engine](https://github.com/kurgm/kage-engine) TypeScript renderer. Point-for-point identical to the reference implementation (see [validation](#validation)) — the regression baseline. |
-| `pen-minimal` | A uniform-width stroke preview (butt caps, per-segment quads; Levien's *weak correctness* level). Preview-grade; it is the interface placeholder for the v2 pen backend. |
+| `pen` | The v2 style engine: a relational graph over the strokes plus declarative style files (`--style serif-song\|sans-hei\|sans-round\|<path>`). Variable-width nib; endpoints come from the data, ornaments from the style. User guide: [`docs/pen-backend.md`](docs/pen-backend.md). |
+| `pen-minimal` | A uniform-width stroke preview (butt caps, per-segment quads; Levien's *weak correctness* level). Preview-grade; it is the v1 interface placeholder, kept as the equivalence anchor. |
+
+`--backend both` renders `legacy-kurgm` and `pen` side by side — the useful contrast is now
+faithful-vs-pen, not faithful-vs-preview.
 
 ## Why this exists
 
@@ -79,9 +83,23 @@ $ glyphsmith render u6f22-j --out png --corpus examples/showcase.gsf
 ```
 
 `--out` is `svg` (default, returned inline, nothing written), `png` (written to
-`<name>.png` in the current directory), or `outline.json`. `--backend pen-minimal` switches
-renderers; `--backend both` renders with both and returns both results side by side. `--font`
-takes `serif`/`mincho` or `sans`/`gothic`.
+`<name>.png` in the current directory), or `outline.json`. `--backend` is `legacy-kurgm`
+(default), `pen`, `pen-minimal`, or `both` — legacy-kurgm and pen side by side, as `svg_legacy`
+and `svg_pen`. `--font` takes `serif`/`mincho` or `sans`/`gothic` and belongs to `legacy-kurgm`;
+the pen backend ignores it and takes `--style <name|path>` instead — the three built-ins are
+listed by `glyphsmith styles`:
+
+```sh
+$ glyphsmith render u4e00-j --corpus examples/showcase.gsf --backend pen --style sans-hei
+$ glyphsmith styles
+{"status": "ok", "data": {"styles": [{"name": "sans-hei", "genre": "sans", "path": "…/styles/sans-hei.yaml", "description": "sans style with 0 decoration(s) and 0 rule(s)"}, …]}, "warnings": [], "hints": []}
+```
+
+With `--backend pen`, a `--style` that is empty, unknown, or a file that cannot be read is a
+usage error (exit 2, message in `data.error`) rather than a silent fall back to the default. The
+other backends never open the style file, so `render --style nope` with them exits 0 by design:
+the value is validated only where it would be read (`cli.py`; an empty `--style` is a usage error
+everywhere, because nobody means it).
 
 ### Resolve the reference closure
 
@@ -119,6 +137,7 @@ han = corpus.resolve("u6f22-j")                       # ref closure, cycle-check
 
 serif = Renderer(backend="legacy-kurgm", font="mincho").render(han)
 gothic = Renderer(backend="legacy-kurgm", font="gothic").render(han)     # same skeleton, other genre
+pen = Renderer(backend="pen", style="serif-song").render(han)            # the v2 style engine
 preview = Renderer(backend="pen-minimal").render(han)
 
 print("contours:", len(serif.contours))               # contours: 28
@@ -137,6 +156,7 @@ svg = serif.to_svg()                                  # Outline -> SVG, or to_pa
 | `glyphsmith.protocol` | The `Backend` ABC + registry, `Renderer` (public API), `RenderOptions` |
 | `glyphsmith.corpus` | `Corpus`: loads a GSF file or a GlyphWiki dump, caches parses, resolves reference closures, detects cycles, reports dangling references |
 | `glyphsmith.legacy_kurgm` | The faithful port: mincho/gothic rule tables (straight and curve variants), stroke geometry, transforms, fingerprinting |
+| `glyphsmith.pen` | The v2 backend: relational graph, declarative style files, variable-width nib (`style.py`, `graph.py`, `nib.py`, `backend.py`) |
 | `glyphsmith.pen_minimal` | Preview backend: uniform-width outline of every control segment |
 | `glyphsmith.outline` | The shared `Outline` structure both backends produce (`to_svg`, `to_path_d`) |
 | `glyphsmith.compare` | Raster IoU and per-stroke metrics |
@@ -184,17 +204,17 @@ external inputs are missing.
 | Golden matrix | kage-engine's own 7,614 cases, per-character fingerprint | **7,614/7,614** |
 | Cross-engine | 1,000 randomly sampled real dump glyphs, fingerprints against kage-engine under Node | **1,000/1,000** |
 | Full-dump smoke | every glyph in `dump_newest_only.txt` (2,221,895), rendered, counted, never written | **2,221,895 glyphs, err=0** |
-| Test suite | `pytest` | **7,783 passed** |
+| Test suite | `pytest` | **8,019 passed** |
 
 The golden fixture is kage-engine's own `test/strokes.js` snapshot
 (`tests/fixtures/kurgm-strokes-golden.tsv`) — the reference implementation's expectations, not
 ours.
 
 ```sh
-pytest -q                                                   # 7,775 passed, 8 skipped (no external data)
+pytest -q                                                   # 8,011 passed, 8 skipped (no external data)
 pytest -m golden -q                                         # 7,614 passed — the golden matrix
 GSF_DUMP=<dump>/dump_newest_only.txt \
-  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 7,783 passed — nothing skipped
+  KAGE_ENGINE=<kage-engine>/lib/esm/index.js pytest -q      # 8,019 passed — nothing skipped
 ```
 
 The 8 tests that skip without external resources are the ones that need the 318 MB dump, Node.js, or
@@ -220,7 +240,7 @@ A quick subset check:
 
 ```sh
 $ GSF_DUMP=<dump> python scripts/smoke_full.py --limit 20000 --workers 8
-scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.7s rate=7322/s
+scope=stroke-only backend=legacy-kurgm style=serif-song workers=8 total=20000 ok=165 empty=19835 err=0 elapsed=2.0s rate=10067/s
 ```
 
 ## Known limitations
@@ -230,9 +250,9 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   covered; they are the motivation for the v2 pen backend.
 - **`pen-minimal` is preview-grade.** Uniform `WIDTH = 8.0`, butt caps only, per-segment quads with
   no boolean union, transforms skipped. It exists to prove the `Backend` protocol is not
-  legacy-shaped, and it is a fast preview tool. The design for the real pen backend
-  (relational graph + style files + variable-width nib) is in
-  [`docs/pen-backend-design.md`](docs/pen-backend-design.md).
+  legacy-shaped, and it is a fast preview tool. The v2 engine it stood in for now ships as
+  `--backend pen` (relational graph + style files + variable-width nib; design and equations in
+  [`docs/pen-backend-design.md`](docs/pen-backend-design.md)).
 - **`batch` does not resolve references.** Like the smoke harness it renders each glyph with its own
   parts only (a throughput decision at dump scale), so reference-only glyphs come out as empty SVGs.
   Use `render` when you need closure-resolved output. `empty` is reported in the batch stats.
@@ -248,6 +268,20 @@ scope=stroke-only backend=legacy-kurgm workers=8 total=20000 ok=165 empty=19835 
   that version is absent from a newest-only dump, glyphsmith falls back to rendering newest `X` and
   emits a `version ref fallback` warning; kage-engine looks the part up exactly and silently draws
   nothing. This is a long-standing, disclosed difference in the corpus layer, not in the renderer.
+- **The pen backend is not part of the golden differential baseline.** It shares the skeleton with
+  `legacy-kurgm` (expansion, stroke order) but deliberately not the geometry — decorations are
+  calibrated rather than ported, curves follow the true curve instead of the control polygon, the two
+  rules are declarative rewrites rather than ports, and `meets_tol = 1.0` replaces exact coordinate
+  equality. The IoU between the two engines is therefore a **reference number, not a pass/fail
+  gate**: 0.7409 at n = 200 (0.7412 at n = 2000) from `scripts/pen_style_diff.py --closure` — the
+  flag matters, because the stroke-only default compares mostly blank masks. Full list and the
+  five-layer validation story: [`docs/pen-backend.md`](docs/pen-backend.md).
+
+> **Nothing here can tell you whether the pen output *looks like* Song/Ming.** That is an
+> aesthetic judgement about a typeface, and the pen backend does not pretend to score it: the
+> validation layers constrain the geometry and the wiring, and the self-golden fixture only
+> freezes what they produced. The full statement — what each of the five layers can and cannot
+> prove — is in the [pen backend guide](docs/pen-backend.md#validation-five-layers-and-what-each-cannot-tell-you).
 
 ## License and provenance
 

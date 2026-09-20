@@ -3,9 +3,9 @@
 {"status","data","warnings","hints"}.
 
 stdout is always one line of JSON; exit codes are 0 ok / 2 usage (argparse's
-own plus unknown font/backend plus a missing corpus file) / 3 unknown glyph
-(hints carry a `glyphsmith list --like ...` remedy) / 4 cycle (data.error
-carries the cycle path).
+own plus unknown font/backend, an unusable --style, and a corpus file that
+cannot be opened) / 3 unknown glyph (hints carry a `glyphsmith list --like ...`
+remedy) / 4 cycle (data.error carries the cycle path).
 """
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ import glyphsmith.legacy_kurgm  # noqa: F401  register the legacy-kurgm backend
 FONT_ALIAS = {"serif": "mincho", "sans": "gothic",
               "mincho": "mincho", "gothic": "gothic"}
 
+_STYLE_HELP = ("pen backend style: a built-in name (see `glyphsmith styles`) "
+               "or a path to a .yaml file")
+
 
 def _emit(status: str, data: dict, warnings=None, hints=None) -> None:
     json.dump({"status": status, "data": data,
@@ -31,6 +34,41 @@ def _emit(status: str, data: dict, warnings=None, hints=None) -> None:
 def _fail(code: int, message: str, hints=None) -> None:
     _emit("error", {"error": message}, hints=hints)
     raise SystemExit(code)
+
+
+def _style_arg(args) -> str:
+    """The `--style` value, with no silent fallback (T14 review minor b).
+
+    An empty value used to reach the pen backend's own `or`, which turned it
+    into the default style: a typo read as "nothing wrong". `choices=` cannot
+    express this, because --style also takes a path, so the check lives here.
+    """
+    from glyphsmith.protocol import RenderOptions
+    style = getattr(args, "style", None)
+    if style is None:                  # a command that has no --style at all
+        return RenderOptions().style   # the single default (protocol.RenderOptions)
+    if not str(style).strip():
+        _fail(2, f"--style must be a style name or a path to a .yaml file, "
+                 f"got {style!r} (built-ins: see `glyphsmith styles`)")
+    return style
+
+
+def _checked_style(args) -> str:
+    """`_style_arg` + resolve it: a style the pen backend cannot load is a usage
+    error before any work starts (a whole-corpus batch would otherwise count one
+    error per glyph instead of exiting 2).
+
+    Style.load answers "unknown style ..." and, since T15, "cannot read style
+    file ..." — both are StyleError, which the module contract maps to exit 2.
+    The render call loads the style again; the files are a few dozen lines.
+    """
+    from glyphsmith.pen.style import Style, StyleError
+    style = _style_arg(args)
+    try:
+        Style.load(style)
+    except StyleError as e:
+        _fail(2, str(e))
+    return style
 
 
 def _safe_filename(name: str) -> str:
@@ -68,10 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
     r = sp("render", "render one glyph (--out svg|png|outline.json)")
     r.add_argument("name")
     r.add_argument("--backend", default="legacy-kurgm",
-                   help="legacy-kurgm|pen-minimal|both (both = render with both backends)")
+                   help="legacy-kurgm|pen|pen-minimal|both "
+                        "(both = legacy-kurgm + pen, side by side)")
     r.add_argument("--font", default="mincho",
                    help="serif|mincho or sans|gothic (resolved via FONT_ALIAS)")
     r.add_argument("--out", default="svg", choices=["svg", "png", "outline.json"])
+    r.add_argument("--style", default="serif-song", help=_STYLE_HELP)
     rs = sp("resolve", "ref dependency closure: closure / dangling / depth")
     rs.add_argument("name")
     ins = sp("inspect", "glyph anatomy: op counts + name meta")
@@ -84,30 +124,49 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_.add_argument("a"); cmp_.add_argument("b")
     cmp_.add_argument("--backend", default="legacy-kurgm")
     cmp_.add_argument("--font", default="mincho")
+    cmp_.add_argument("--style", default="serif-song", help=_STYLE_HELP)
     b = sp("batch", "batch-render a whole corpus -> outdir/<glyph-name>.svg (multiprocessing)")
     b.add_argument("--out", required=True, help="output directory")
     b.add_argument("--backend", default="legacy-kurgm")
+    b.add_argument("--style", default="serif-song", help=_STYLE_HELP)
     b.add_argument("--workers", type=int, default=4)
     b.add_argument("--dump", action="store_true",
                    help="corpus is a GlyphWiki dump_newest_only.txt"
                         " (otherwise auto-detected: first line contains '|' and is not a gsf/ header)")
+    sp("styles", "list built-in pen styles (name / genre / path)")
+    g = sp("graph", "pen relational graph as JSON (--plans adds the stroke plans)")
+    g.add_argument("name")
+    g.add_argument("--style", default="serif-song", help=_STYLE_HELP)
+    g.add_argument("--plans", action="store_true")
     return p
 
 
 # ── command bodies: return (data, warnings); errors bubble up and main handles them ──
-def _make_renderer(args):
+def _make_renderer(args, backend=None):
+    """The one place the CLI builds a Renderer: usage errors (unknown font or
+    backend, unusable --style) become exit 2 here, before any rendering work."""
     from glyphsmith import Renderer
+    backend = backend or args.backend
     font = FONT_ALIAS.get(args.font)
     if font is None:
         _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
+    # only `pen` reads a style, and it takes --font from the data instead. An
+    # *unknown* --style is therefore checked only where it would be read: the
+    # other backends legitimately ignore it (every backend command defaults to
+    # serif-song, so a name they never open cannot be told apart from the
+    # default). An empty --style is a usage error everywhere -- it is a value
+    # nobody means and pen's own fallback would swallow it.
+    style = _checked_style(args) if backend == "pen" else _style_arg(args)
     try:
-        return Renderer(backend=args.backend, font=font)
+        return Renderer(backend=backend, font=font, style=style)
     except ValueError as e:           # get_backend: unregistered backend name
         _fail(2, str(e))
 
 
-# the fixed render order for `--backend both`; svg_legacy/svg_pen keys follow it
-BOTH_BACKENDS = ["legacy-kurgm", "pen-minimal"]
+# The fixed render order for `--backend both`; svg_legacy/svg_pen keys follow it.
+# v2 (D11): the useful contrast is now faithful-vs-pen, not faithful-vs-preview —
+# pen-minimal stays available by name as the v1 equivalence anchor (T16).
+BOTH_BACKENDS = ["legacy-kurgm", "pen"]
 
 
 def _render_both(args, r):
@@ -116,12 +175,8 @@ def _render_both(args, r):
     For svg both keys are inlined; png/outline.json write two files,
     {name}.legacy.*/{name}.pen.* (the write contract matches the single-backend
     case: exit 2 + JSON)."""
-    from glyphsmith import Renderer
     from glyphsmith.compare import rasterize
-    font = FONT_ALIAS.get(args.font)
-    if font is None:
-        _fail(2, f"unknown font: {args.font!r} (available: {sorted(FONT_ALIAS)})")
-    outs = {key: Renderer(backend=b, font=font).render(r)
+    outs = {key: _make_renderer(args, b).render(r)
             for b, key in zip(BOTH_BACKENDS, ("legacy", "pen"))}
     # each backend writes the same expansion warnings back into r.warnings
     # → de-duplicate, preserving order
@@ -273,9 +328,35 @@ def _cmd_compare(args, corpus):
     return result.to_dict(), warns
 
 
+def _cmd_styles(_args, _corpus=None):
+    # unlike the corpus commands this reads only the style files on disk: the
+    # three recipes are one pen model, so listing them must work before any
+    # corpus exists (hence _NO_CORPUS).
+    from glyphsmith.pen.style import Style
+    rows = []
+    for name in Style.available():
+        s = Style.load(name)
+        rows.append({"name": s.name, "genre": s.genre, "path": str(s.path),
+                     "description": f"{s.genre} style with "
+                                    f"{len(s.decorations)} decoration(s) and "
+                                    f"{len(s.rules)} rule(s)"})
+    return {"styles": rows}, []
+
+
+def _cmd_graph(args, corpus):
+    from glyphsmith.pen.backend import expand_to_graph, plan_to_dict
+    r = corpus.resolve(args.name)
+    g, plans, _items, warns, _counts = expand_to_graph(r, _checked_style(args))
+    data = {"name": args.name, "graph": g.to_dict()}
+    if args.plans:
+        data["plans"] = {str(k): plan_to_dict(v) for k, v in plans.items()}
+    return data, warns
+
+
 _HANDLERS = {"render": _cmd_render, "resolve": _cmd_resolve,
              "inspect": _cmd_inspect, "list": _cmd_list,
-             "sample": _cmd_sample, "compare": _cmd_compare}
+             "sample": _cmd_sample, "compare": _cmd_compare,
+             "styles": _cmd_styles, "graph": _cmd_graph}
 
 
 def _looks_like_dump(path: str) -> bool:
@@ -303,9 +384,10 @@ def _cmd_batch(args, _corpus=None):
         get_backend(args.backend)
     except ValueError as e:
         _fail(2, str(e))
+    style = _checked_style(args) if args.backend == "pen" else _style_arg(args)
     try:
         stats = batch_render(args.corpus, args.out, backend=args.backend,
-                             workers=args.workers,
+                             workers=args.workers, style=style,
                              dump=args.dump or _looks_like_dump(args.corpus))
     except FileNotFoundError:          # missing corpus: re-raised to main (hints point at the file)
         raise
@@ -314,16 +396,30 @@ def _cmd_batch(args, _corpus=None):
     return {**stats, "outdir": args.out}, []
 
 
+# registered here, not in the literal above: _cmd_batch is defined below it.
+# main() dispatches every _NO_CORPUS command through this table, so batch must
+# be in it (it used to be a special case in main).
+_HANDLERS["batch"] = _cmd_batch
+
+
+# Commands that must not have a corpus built before dispatch. batch loads its own
+# (dump auto-detection, and reading the 317MB dump twice would be wasteful);
+# styles only lists the style files under src/glyphsmith/styles/. The default
+# --corpus is glyphwiki-newest.gsf, which need not exist for either.
+_NO_CORPUS = {"batch", "styles"}
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     from glyphsmith.corpus import Corpus, UnknownGlyphError
     from glyphsmith.legacy_kurgm.expansion import CycleError
+    from glyphsmith.pen.style import StyleError
 
     try:
-        if args.cmd == "batch":        # batch loads its own corpus (see _cmd_batch)
-            data, warnings = _cmd_batch(args)
+        if args.cmd in _NO_CORPUS:     # these commands do not need a corpus
+            data, warnings = _HANDLERS[args.cmd](args)
         else:
-            # final review C1: non-batch commands also route dump corpora
+            # final review C1: the corpus commands route dump corpora
             # automatically (batch did this in T16; previously a dump path was
             # silently loaded by from_gsf as an empty corpus → a misleading
             # exit 3 on the first glyph)
@@ -337,6 +433,12 @@ def main(argv: list[str] | None = None) -> None:
         _fail(2, f"cannot open corpus {args.corpus}: {e}",
               hints=[{"action": "glyphsmith list --corpus <path.gsf|dump.txt> --like '<prefix>*'",
                       "reason": "point --corpus at the corpus file"}])
+    except StyleError as e:      # T15: a style that cannot be loaded is a usage error.
+                                 # StyleError is a plain Exception, so it used to walk
+                                 # straight out of every path that reads a style
+                                 # (render --backend pen|both, compare, graph, batch,
+                                 # `styles` itself) as a raw traceback with no JSON.
+        _fail(2, str(e))
     except UnknownGlyphError as e:
         _fail(3, str(e), hints=[
             {"action": f"glyphsmith list --corpus {args.corpus} --like '{e.name[:4]}*'",

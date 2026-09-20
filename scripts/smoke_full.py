@@ -12,6 +12,9 @@ Two scopes (both numbers go into the report):
 
 --limit N   smoke only the first N names (a deterministic subset, handy for a
             quick check);
+--style S   pen backend style (builtin name or style file, default serif-song);
+            the other backends ignore it. Degeneracy numbers are not this
+            script's job: see scripts/pen_audit.py (spec §6 layer 3);
 --workers N ≥2 runs the multiprocess version (each worker builds its own Corpus;
             windowed submission keeps memory bounded); the counting logic shares
             _render_chunk with the serial version and the numbers must agree
@@ -46,7 +49,7 @@ WINDOW_FACTOR = 4               # in-flight window = workers × WINDOW_FACTOR ch
 _STATE: dict = {}
 
 
-def _init_worker(dump, backend_name, closure):
+def _init_worker(dump, backend_name, closure, style):
     from importlib import import_module
 
     from glyphsmith.batch import _BACKEND_MODULES
@@ -56,26 +59,36 @@ def _init_worker(dump, backend_name, closure):
     mod = _BACKEND_MODULES.get(backend_name)
     if mod is not None:                 # unknown names are left to get_backend's ValueError
         import_module(mod)
+    if backend_name == "pen":
+        # One load per worker, before the scan: Style.load is memoised per file
+        # revision, and an unusable style is one clean exit rather than one error
+        # per glyph. Only the pen backend has styles; the others ignore --style.
+        from glyphsmith.pen.style import Style
+        Style.load(style)
     _STATE["corpus"] = Corpus.from_dump(dump)
     _STATE["backend"] = get_backend(backend_name)
+    _STATE["backend_name"] = backend_name
     _STATE["closure"] = closure
+    _STATE["style"] = style
 
 
 def _render_chunk(names):
     """Count one block of names → (ok, empty, err, error samples). Serial/multiprocess shared."""
     from gsf.kage2 import parse_kage2
     from glyphsmith.corpus import ResolveResult
+    from glyphsmith.protocol import RenderOptions
 
     corpus, backend = _STATE["corpus"], _STATE["backend"]
+    opts = RenderOptions(backend=_STATE["backend_name"], style=_STATE["style"])
     ok = empty = err = 0
     errors: list[str] = []
     for name in names:
         try:
             if _STATE["closure"]:
-                out = backend.render(corpus.resolve(name))
+                out = backend.render(corpus.resolve(name), opts)
             else:                       # stroke-only scope: parts are only itself
                 g = parse_kage2(corpus._data[name], name)
-                out = backend.render(ResolveResult(name, g, {name: g}, []))
+                out = backend.render(ResolveResult(name, g, {name: g}, []), opts)
             if out.contours:
                 ok += 1
             else:
@@ -93,6 +106,9 @@ def main() -> None:
     ap.add_argument("--corpus", default=DUMP,
                     help="path to dump_newest_only.txt (defaults to the GSF_DUMP env var)")
     ap.add_argument("--backend", default="legacy-kurgm")
+    ap.add_argument("--style", default="serif-song",
+                    help="pen backend style (builtin name or style file); "
+                         "the other backends ignore it")
     ap.add_argument("--closure", action="store_true",
                     help="full-closure scope (default stroke-only)")
     ap.add_argument("--limit", type=int, default=None,
@@ -111,16 +127,17 @@ def main() -> None:
         sys.exit("--limit must be >= 0")
 
     scope = "closure" if a.closure else "stroke-only"
-    print(f"smoke scope={scope} backend={a.backend} workers={a.workers} "
-          f"limit={a.limit if a.limit is not None else 'all'}",
+    print(f"smoke scope={scope} backend={a.backend} style={a.style} "
+          f"workers={a.workers} limit={a.limit if a.limit is not None else 'all'}",
           file=sys.stderr)
 
     # Name list: the main process builds its own corpus (workers build their
-    # own, one init each). Configuration errors (unknown backend / missing file)
-    # exit cleanly here, leaving no raw traceback.
+    # own, one init each). Configuration errors (unknown backend / style,
+    # missing file) exit cleanly here, leaving no raw traceback.
+    from glyphsmith.pen.style import StyleError
     try:
-        _init_worker(a.corpus, a.backend, a.closure)
-    except (ValueError, FileNotFoundError) as e:
+        _init_worker(a.corpus, a.backend, a.closure, a.style)
+    except (ValueError, FileNotFoundError, StyleError) as e:
         sys.exit(f"error: {e}")
     names = list(_STATE["corpus"].iter_names())
     if a.limit is not None:
@@ -154,7 +171,8 @@ def main() -> None:
         it = iter(chunks)
         with ProcessPoolExecutor(max_workers=a.workers,
                                  initializer=_init_worker,
-                                 initargs=(a.corpus, a.backend, a.closure)) as ex:
+                                 initargs=(a.corpus, a.backend, a.closure,
+                                           a.style)) as ex:
             while True:                  # windowed submission: bounded in-flight tasks
                 window = list(islice(it, a.workers * WINDOW_FACTOR))
                 if not window:
@@ -166,7 +184,7 @@ def main() -> None:
     for s in samples:
         print(f"error sample: {s}", file=sys.stderr)
     rate = total / dt if dt else float("inf")
-    print(f"scope={scope} backend={a.backend} workers={a.workers} "
+    print(f"scope={scope} backend={a.backend} style={a.style} workers={a.workers} "
           f"total={total} ok={ok} empty={empty} err={err} "
           f"elapsed={dt:.1f}s rate={rate:.0f}/s")
 
